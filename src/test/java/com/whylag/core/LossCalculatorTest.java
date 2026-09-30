@@ -282,16 +282,4 @@ public class LossCalculatorTest
 		assertEquals(40, out.rttMs);
 		assertEquals("what went out while the probe had no data is not lost", 2000, out.sentUnits);
 	}
-
-	@Test
-	public void sampleLeavesTheHostHalfAlone()
-	{
-		out.heapUsedMb = 412;
-		out.procCpuPct = 33;
-		out.sysCpuPct = 21;
-		loss.sample(START, RTT_40_MS, 100, 0, NoData.NONE, out);
-		assertEquals(412, out.heapUsedMb);
-		assertEquals(33, out.procCpuPct);
-		assertEquals(21, out.sysCpuPct);
-	}
 }

@@ -9,7 +9,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.junit.Assume;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -40,11 +39,8 @@ public class AnswerTest
 		ROWS.put(Cause.DELIVERY_GAP, row("No ticks", "Line or world", Icon.UNKNOWN, "No ticks - line or world"));
 		ROWS.put(Cause.SLOW_DRAWING, row("Low FPS", "Your PC", Icon.PC, "Low FPS - your PC"));
 		ROWS.put(Cause.FRAME_CAP, row("FPS capped", "Your setting", Icon.PC, "FPS capped - your setting"));
-		ROWS.put(Cause.CLIENT_BUSY, row("Client froze", "A plugin?", Icon.PC, "Client froze - a plugin?"));
-		ROWS.put(Cause.CLIENT_WAITING, row("Client waited", "An overlay?", Icon.PC, "Client waited - an overlay?"));
+		ROWS.put(Cause.CLIENT_BUSY, row("Client froze", "Your PC", Icon.PC, "Client froze - your PC"));
 		ROWS.put(Cause.MAP_LOAD, row("Map loading", "Just the map", Icon.PC, "Map loading - just the map"));
-		ROWS.put(Cause.GC_PAUSE, row("Memory stall", "The client", Icon.MEMORY, "Memory stall - the client"));
-		ROWS.put(Cause.HEAP_CAP_LOW, row("Low memory", "Your setting", Icon.MEMORY, "Low memory - your setting"));
 		ROWS.put(Cause.NOT_SURE, row("Lag", "Can't tell why", Icon.UNKNOWN, "Lag - can't tell why"));
 	}
 
@@ -63,7 +59,7 @@ public class AnswerTest
 			assertAnswer(c.name(), row, Answer.of(c));
 			assertSame(c + ": a verdict of the cause answers the same", Answer.of(c), Answer.of(verdict(c, "h")));
 		}
-		assertEquals("the fifteen causes of the rules (W1c shares W1's)", 15, ROWS.size());
+		assertEquals("the twelve causes of the rules (W1c shares W1's)", 12, ROWS.size());
 		assertAnswer("measuring", row("Measuring", "", Icon.NONE, "Measuring"),
 			Answer.of(state(Answer.HEAD_MEASURING)));
 		assertAnswer("not logged in", row("Not logged in", "", Icon.NONE, "Not logged in"),
@@ -108,14 +104,13 @@ public class AnswerTest
 		assertSame("and a verdict with no cause", Answer.MEASURING, Answer.of(verdict(null, "h")));
 	}
 
-	/** Every cause outside wave one answers its group's pair, never null, never a throw; all six groups are seen. */
+	/** Every cause outside wave one answers its group's pair, never null, never a throw; all five groups are seen. */
 	@Test
 	public void aLaterCauseAnswersItsGroupsPair()
 	{
 		final Map<Group, Object[]> pairs = new LinkedHashMap<>();
 		pairs.put(Group.CONNECTION, row("Ping lag", "Your internet", Icon.LINE, "Ping lag - your internet"));
 		pairs.put(Group.FRAME_RATE, row("Low FPS", "Your PC", Icon.PC, "Low FPS - your PC"));
-		pairs.put(Group.MEMORY, row("Memory stall", "The client", Icon.MEMORY, "Memory stall - the client"));
 		pairs.put(Group.WORLD, row("World lag", "Not you", Icon.WORLD, "World lag - not you"));
 		pairs.put(Group.UNSURE, row("Lag", "Can't tell why", Icon.UNKNOWN, "Lag - can't tell why"));
 		pairs.put(Group.NONE, row("Smooth", "", Icon.NONE, "Smooth"));
@@ -144,7 +139,7 @@ public class AnswerTest
 		assertEquals("World lag - not you", Answer.of(Cause.SLOW_WORLD).oneLine);
 		assertEquals("Low FPS - your PC", Answer.of(Cause.SLOW_DRAWING).oneLine);
 		assertEquals("Smooth", Answer.SMOOTH.oneLine);
-		assertEquals("Client froze - a plugin?", Answer.of(Cause.CLIENT_BUSY).oneLine);
+		assertEquals("Client froze - your PC", Answer.of(Cause.CLIENT_BUSY).oneLine);
 		assertEquals("Lag - can't tell why", Answer.of(Cause.NOT_SURE).oneLine);
 		assertEquals("Measuring", Answer.MEASURING.oneLine);
 		for (Answer a : everyAnswer())
@@ -193,53 +188,6 @@ public class AnswerTest
 			final int m = f.getModifiers();
 			assertTrue(name + " is a constant", Modifier.isStatic(m) && Modifier.isFinal(m));
 		}
-	}
-
-	/** Allocates nothing: a badge or a card can ask every step, and compare what it gets by identity. */
-	@Test
-	public void ofAllocatesNothing()
-	{
-		final com.sun.management.ThreadMXBean bean = SecondRingTest.allocationBean();
-		Assume.assumeTrue("this JVM does not count allocated bytes", bean != null);
-		final Cause[] causes = Cause.values();
-		final List<Verdict> list = new ArrayList<>();
-		for (Cause c : causes)
-		{
-			list.add(verdict(c, "h"));
-		}
-		list.add(state(Answer.HEAD_NOT_LOGGED_IN));
-		list.add(state(Answer.HEAD_MEASURING));
-		list.add(state(Answer.HEAD_WAITING));
-		list.add(null);
-		final Verdict[] verdicts = list.toArray(new Verdict[0]);
-		long sink = 0;
-		for (int k = 0; k < 1_000; k++)
-		{
-			sink += spin(verdicts, causes, 1_000);
-		}
-		final long thread = Thread.currentThread().getId();
-		bean.getThreadAllocatedBytes(thread);
-		final long before = bean.getThreadAllocatedBytes(thread);
-		sink += spin(verdicts, causes, 1_000_000);
-		final long after = bean.getThreadAllocatedBytes(thread);
-		assertEquals(0, after - before);
-		assertTrue(sink > 0);
-	}
-
-	/**
-	 * Asks {@code n} times, round the verdicts and the causes. The measured run calls this SAME method once more after
-	 * its warm-up, so it runs code the JIT has already compiled; a second, cold loop would be charged a few one-off
-	 * bytes of the JVM's own (56 to 120 measured on 2026-09-29), whatever it called.
-	 */
-	private static long spin(Verdict[] verdicts, Cause[] causes, int n)
-	{
-		long sink = 0;
-		for (int i = 0; i < n; i++)
-		{
-			sink += Answer.of(verdicts[i % verdicts.length]).line1.length();
-			sink += Answer.of(causes[i % causes.length]).line2.length();
-		}
-		return sink;
 	}
 
 	/** At most 14 characters a line (the card's big line and the badge's word line are measured in L6 and L11). */

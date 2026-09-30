@@ -14,7 +14,8 @@ import static org.junit.Assert.assertTrue;
 /**
  * Pins the starting value of every threshold (contract 3.1) by literal, so a change to one is a deliberate edit
  * here too, and proves every field is a {@code public static final} constant. A constant added without a pin fails
- * {@link #everyConstantIsPinned()}.
+ * {@link #everyConstantIsPinned()}. The thresholds of the memory pauses, the heap, the busy share and the CPU are
+ * gone with those readings (1.0.0, the Hub's rule): none of their names is a constant any more.
  */
 public class ThresholdsTest
 {
@@ -24,7 +25,6 @@ public class ThresholdsTest
 	{
 		PINNED.put("SECONDS", 3600);
 		PINNED.put("TICKS", 6000);
-		PINNED.put("GC_PAUSES", 256);
 		PINNED.put("EVENTS", 500);
 		PINNED.put("TICK_MS", 600);
 		PINNED.put("WARMUP_S", 0);
@@ -75,18 +75,6 @@ public class ThresholdsTest
 		PINNED.put("RESENT_MIN_UNITS", 8);
 		PINNED.put("RESENT_PER_MILLE", 10);
 		PINNED.put("RESENT_LOOK_S", 2);
-		PINNED.put("GC_PAUSE_MS", 100);
-		PINNED.put("GC_COVER_PCT", 60);
-		PINNED.put("GC_WARN_MS", 100);
-		PINNED.put("GC_BAD_MS", 300);
-		PINNED.put("HEAP_WARN_PCT", 85);
-		PINNED.put("HEAP_BAD_PCT", 93);
-		PINNED.put("HEAP_DROP_MB", 64);
-		PINNED.put("HEAP_CAP_LOW_MB", 700);
-		PINNED.put("BUSY_LOW_PM", 300);
-		PINNED.put("BUSY_HIGH_PM", 600);
-		PINNED.put("CPU_WARN_PCT", 85);
-		PINNED.put("CPU_BAD_PCT", 95);
 		PINNED.put("LOAD_LONG_MS", 2000);
 		PINNED.put("LOADS_LOOK_S", 600);
 		PINNED.put("EVENT_QUIET_S", 5);
@@ -104,7 +92,6 @@ public class ThresholdsTest
 		PINNED.put("STRIP_TICK_PAD_MS", 50);
 		PINNED.put("STRIP_PING_MAX_MS", 100);
 		PINNED.put("STRIP_PING_PAD_PCT", 120);
-		PINNED.put("STRIP_CPU_MAX_PCT", 100);
 		PINNED.put("HOST_FILL_S", 3);
 		PINNED.put("BADGE_HOLD_S", 15);
 		PINNED.put("CHAT_GAP_S", 30);
@@ -115,7 +102,6 @@ public class ThresholdsTest
 	{
 		assertEquals(3600, Thresholds.SECONDS);
 		assertEquals(6000, Thresholds.TICKS);
-		assertEquals(256, Thresholds.GC_PAUSES);
 		assertEquals(500, Thresholds.EVENTS);
 		assertEquals(600, Thresholds.TICK_MS);
 		assertEquals(0, Thresholds.WARMUP_S);
@@ -166,18 +152,6 @@ public class ThresholdsTest
 		assertEquals(8, Thresholds.RESENT_MIN_UNITS);
 		assertEquals(10, Thresholds.RESENT_PER_MILLE);
 		assertEquals(2, Thresholds.RESENT_LOOK_S);
-		assertEquals(100, Thresholds.GC_PAUSE_MS);
-		assertEquals(60, Thresholds.GC_COVER_PCT);
-		assertEquals(100, Thresholds.GC_WARN_MS);
-		assertEquals(300, Thresholds.GC_BAD_MS);
-		assertEquals(85, Thresholds.HEAP_WARN_PCT);
-		assertEquals(93, Thresholds.HEAP_BAD_PCT);
-		assertEquals(64, Thresholds.HEAP_DROP_MB);
-		assertEquals(700, Thresholds.HEAP_CAP_LOW_MB);
-		assertEquals(300, Thresholds.BUSY_LOW_PM);
-		assertEquals(600, Thresholds.BUSY_HIGH_PM);
-		assertEquals(85, Thresholds.CPU_WARN_PCT);
-		assertEquals(95, Thresholds.CPU_BAD_PCT);
 		assertEquals(2000, Thresholds.LOAD_LONG_MS);
 		assertEquals(600, Thresholds.LOADS_LOOK_S);
 		assertEquals(5, Thresholds.EVENT_QUIET_S);
@@ -195,7 +169,6 @@ public class ThresholdsTest
 		assertEquals(50, Thresholds.STRIP_TICK_PAD_MS);
 		assertEquals(100, Thresholds.STRIP_PING_MAX_MS);
 		assertEquals(120, Thresholds.STRIP_PING_PAD_PCT);
-		assertEquals(100, Thresholds.STRIP_CPU_MAX_PCT);
 		assertEquals(3, Thresholds.HOST_FILL_S);
 		assertEquals(15, Thresholds.BADGE_HOLD_S);
 		assertEquals(30, Thresholds.CHAT_GAP_S);
@@ -219,7 +192,7 @@ public class ThresholdsTest
 		{
 			assertEquals(e.getKey(), e.getValue(), actual.get(e.getKey()));
 		}
-		assertEquals(86, actual.size());
+		assertEquals(72, actual.size());
 	}
 
 	/**

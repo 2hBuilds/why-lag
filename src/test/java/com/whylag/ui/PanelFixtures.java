@@ -2,13 +2,15 @@ package com.whylag.ui;
 
 import com.whylag.GraphRange;
 import com.whylag.PanelActions;
+import com.whylag.Report;
+import com.whylag.core.BadgeSettings;
+import com.whylag.core.BadgeStyle;
 import com.whylag.core.Cause;
 import com.whylag.core.Confidence;
 import com.whylag.core.Group;
 import com.whylag.core.LagEvent;
 import com.whylag.core.Lane;
 import com.whylag.core.Level;
-import com.whylag.core.MemorySource;
 import com.whylag.core.NoData;
 import com.whylag.core.Os;
 import com.whylag.core.PanelSnapshot;
@@ -19,6 +21,7 @@ import com.whylag.core.Thresholds;
 import com.whylag.core.Tile;
 import com.whylag.core.Trigger;
 import com.whylag.core.Verdict;
+import com.whylag.core.WhenSmooth;
 import java.awt.AlphaComposite;
 import java.awt.Color;
 import java.awt.Component;
@@ -34,6 +37,7 @@ import java.awt.Paint;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Stroke;
+import java.awt.Window;
 import java.awt.event.InputEvent;
 import java.awt.event.MouseEvent;
 import java.awt.font.FontRenderContext;
@@ -61,18 +65,24 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.function.BiFunction;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
 import javax.swing.JComponent;
+import javax.swing.JPopupMenu;
 import javax.swing.RepaintManager;
 import javax.swing.SwingUtilities;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
 
 /**
  * The shared fixtures and tools of the panel's tests (contract 7, L6).
  *
- * <p><b>Fixtures.</b> Every {@link PanelSnapshot} here is built BY CONSTRUCTOR, with FIVE strips and FOUR tiles:
+ * <p><b>Fixtures.</b> Every {@link PanelSnapshot} here is built BY CONSTRUCTOR, with THREE strips and THREE tiles:
  * the picture's quiet panel and its lag (with its event selected), the warm-up, the login screen, every no-data
  * tile, waiting for the game, one fixture for each row of the answer table (contract 3.6) with that cause's longest
  * proof and fix, a condition, the longest when line, all clear after a lag here and on another world, all clear
- * with no lag, seven events, 500 events, five counts over 99, the CPU lane full, empty and with one half, a selected
+ * with no lag, seven events, 500 events, four counts over 99, a selected
  * event whose worst tick is 12,400 ms, and a selected "Not sure" event. The clock is UTC; now is 21:52:00 on
  * 2026-09-28 and the session began at 20:52:00, as in picture 18.
  *
@@ -83,7 +93,6 @@ import javax.swing.SwingUtilities;
  * {@link #tip} (a mouse press and a tooltip at a point), and the contrast ratio of WCAG 2.
  *
  * <p>Choice: V2's longest proof is a day with no lag, "No lag for 1,440 min." (6.4 names no largest minutes).
- * <p>Choice: G1's heap figures are 8,192 of 8,192 MB, a large memory limit (6.4 names no largest MB).
  * <p>Choice: each row of the answer table pairs its cause's longest proof with its longest fix, as D1 never does.
  * <p>Choice: every fixture's clock is UTC; now is 2026-09-28 21:52:00, the moment of picture 18.
  */
@@ -115,12 +124,20 @@ final class PanelFixtures
 		final String name;
 		final PanelSnapshot snapshot;
 		final long selected;
+		/** True when the gear menu is open in the picture, as in {@link #gearOpen()}. */
+		final boolean menuOpen;
 
 		Fixture(String name, PanelSnapshot snapshot, long selected)
+		{
+			this(name, snapshot, selected, false);
+		}
+
+		Fixture(String name, PanelSnapshot snapshot, long selected, boolean menuOpen)
 		{
 			this.name = name;
 			this.snapshot = snapshot;
 			this.selected = selected;
+			this.menuOpen = menuOpen;
 		}
 
 		@Override
@@ -135,8 +152,7 @@ final class PanelFixtures
 	{
 		final List<Fixture> out = new ArrayList<>(Arrays.asList(quiet(), lag(), warmingUp(), notLoggedIn(),
 			waiting(), condition(), longestWhen(), clearHere(), clearElsewhere(), clearNone(), sevenEvents(),
-			fiveHundred(), countsOver99(), cpuFull(), cpuNone(), cpuGameOnly(), cpuPcOnly(), worstTick(),
-			notSure()));
+			fiveHundred(), countsOver99(), worstTick(), notSure(), gearOpen()));
 		out.addAll(noDataTiles());
 		out.addAll(answerRows());
 		return out;
@@ -159,25 +175,36 @@ final class PanelFixtures
 	{
 		final Lanes lanes = new Lanes(1);
 		return new Fixture("quiet", snapshot(WORLD, clearAfter(WORLD), quietTiles(), 1, lanes.build(),
-			Collections.emptyList(), 24, 42), -1);
+			Collections.emptyList()), -1);
+	}
+
+	/**
+	 * The quiet panel with its gear menu open (1.0.1, lot C), on a snapshot whose badge settings are not the defaults
+	 * (show on, Shape only, hidden while smooth, chat line off), so the picture shows ticks that come from the
+	 * snapshot: the one fixture whose picture has the menu in it.
+	 */
+	static Fixture gearOpen()
+	{
+		final PanelSnapshot s = quiet().snapshot.withBadgeSettings(new BadgeSettings(true, BadgeStyle.SHAPE_ONLY,
+			WhenSmooth.HIDE, false));
+		return new Fixture("gear-open", s, -1, true);
 	}
 
 	/** Picture 18, frames 2 and 3: the 10 min range with the picture's lag, event (d), SELECTED. */
 	static Fixture lag()
 	{
 		final LagEvent d = pictureEvent();
-		final Lanes lanes = new Lanes(10).during(D_START, 14, Lane.TICKS, 1240, Level.BAD).scale(Lane.TICKS, 450, 1290)
-			.game(45, "Game 45 %");
+		final Lanes lanes = new Lanes(10).during(D_START, 14, Lane.TICKS, 1240, Level.BAD).scale(Lane.TICKS, 450, 1290);
 		return new Fixture("lag", snapshot(WORLD, clearAfter(WORLD), quietTiles(), 10, lanes.build(),
-			Collections.singletonList(d), 24, 45), d.id);
+			Collections.singletonList(d)), d.id);
 	}
 
-	/** The card's warm-up; the four tiles and the five lane values WITH numbers (contract 5.1). */
+	/** The card's warm-up; the three tiles and the three lane values WITH numbers (contract 5.1). */
 	static Fixture warmingUp()
 	{
 		final Verdict v = state(com.whylag.core.Answer.HEAD_MEASURING, "Ready in 40 s.");
 		return new Fixture("warming-up", snapshot(WORLD, v, quietTiles(), 10, new Lanes(10).build(),
-			Collections.emptyList(), 24, 42, new int[Group.values().length], 0), -1);
+			Collections.emptyList(), new int[Group.values().length], 0), -1);
 	}
 
 	/** The login screen: world 0, every tile "-", every lane value "", every column of every strip NONE. */
@@ -191,7 +218,7 @@ final class PanelFixtures
 				NoData.NOT_LOGGED_IN);
 		}
 		return new Fixture("not-logged-in", snapshot(0, v, tiles, 10, new Lanes(10).empty().build(),
-			Collections.emptyList(), -1, -1), -1);
+			Collections.emptyList()), -1);
 	}
 
 	/** Frames stopped while logged in: "Waiting for the game". */
@@ -201,25 +228,25 @@ final class PanelFixtures
 		final Tile[] tiles = quietTiles();
 		tiles[0] = noData(Lane.FRAME_RATE, NoData.NO_FRAMES);
 		return new Fixture("waiting", snapshot(WORLD, v, tiles, 10, new Lanes(10).none(Lane.FRAME_RATE).build(),
-			Collections.singletonList(pictureEvent()), 24, 42), -1);
+			Collections.singletonList(pictureEvent())), -1);
 	}
 
-	/** Every no-data tile: frames stopped, no ticks yet, each of the four ping reasons, an unknown heap limit. */
+	/** Every no-data tile: frames stopped, no ticks yet, each of the other ping reasons. */
 	static List<Fixture> noDataTiles()
 	{
 		final List<Fixture> out = new ArrayList<>();
 		final Tile[] first = {noData(Lane.FRAME_RATE, NoData.NO_FRAMES), noData(Lane.TICKS, NoData.NO_TICKS),
-			noData(Lane.PING, NoData.NOT_CONNECTED), noData(Lane.MEMORY, NoData.ERROR)};
-		out.add(new Fixture("no-data-frames-ticks-heap", snapshot(WORLD,
+			noData(Lane.PING, NoData.NOT_CONNECTED)};
+		out.add(new Fixture("no-data-frames-ticks-ping", snapshot(WORLD,
 			state(com.whylag.core.Answer.HEAD_WAITING, "No frames are being drawn."), first, 10,
-			new Lanes(10).none(Lane.FRAME_RATE).none(Lane.TICKS).none(Lane.PING).none(Lane.MEMORY).build(),
-			Collections.emptyList(), 24, 42), -1));
+			new Lanes(10).none(Lane.FRAME_RATE).none(Lane.TICKS).none(Lane.PING).build(),
+			Collections.emptyList()), -1));
 		for (NoData why : new NoData[] {NoData.UNSUPPORTED, NoData.ERROR, NoData.STALE})
 		{
 			final Tile[] tiles = quietTiles();
 			tiles[2] = noData(Lane.PING, why);
-			out.add(new Fixture("no-data-ping-" + why.name().toLowerCase(), snapshot(WORLD, clearAfter(WORLD), tiles,
-				10, new Lanes(10).none(Lane.PING).build(), Collections.singletonList(pictureEvent()), 24, 42), -1));
+			out.add(new Fixture("no-data-ping-" + why.name().toLowerCase(), snapshot(WORLD, clearAfter(WORLD),
+				tiles, 10, new Lanes(10).none(Lane.PING).build(), Collections.singletonList(pictureEvent())), -1));
 		}
 		return out;
 	}
@@ -233,8 +260,7 @@ final class PanelFixtures
 		tiles[2] = new Tile(Lane.PING, Level.BAD, "180 ms", "was 45 ms", NoData.NONE);
 		final Lanes lanes = new Lanes(10).during(NOW - 10 * MIN, 600, Lane.PING, 180, Level.BAD)
 			.scale(Lane.PING, 0, 216).value(Lane.PING, "180 ms", Level.BAD);
-		return new Fixture("condition", snapshot(WORLD, v, tiles, 10, lanes.build(), Collections.emptyList(), 24,
-			42), -1);
+		return new Fixture("condition", snapshot(WORLD, v, tiles, 10, lanes.build(), Collections.emptyList()), -1);
 	}
 
 	/** The longest when line: "23:59:59, world 999, 59 min ago" with "Can't tell", a selected X event. */
@@ -245,11 +271,11 @@ final class PanelFixtures
 		final Verdict v = new Verdict(Cause.NOT_SURE, Confidence.CANT_TELL, Level.BAD, "Can't tell yet",
 			"A 170 ms freeze. Its cause was not measured.", "Wait for it to happen again.", "", when, 5, 999, 7,
 			null, null);
-		final LagEvent e = event(7, when, 5, 999, v, 50, 170, 610, 700, 30, 41, 40, 400, 768, 0, 20, 40);
+		final LagEvent e = event(7, when, 5, 999, v, 50, 170, 610, 700, 30, 41, 40);
 		final Lanes lanes = new Lanes(60, now);
-		final PanelSnapshot s = new PanelSnapshot(now, ZONE, 999, clearAfter(999), quietTiles(), 60,
-			now - 60 * MIN, now, lanes.build(), Collections.singletonList(e), Collections.singletonList(e),
-			counts(0, 0, 0, 0, 1), 1, now - 90 * MIN, 24, 42, settings(), "");
+		final PanelSnapshot s = new PanelSnapshot(now, ZONE, 999, clearAfter(999), quietTiles(), 60, now - 60 * MIN,
+			now, lanes.build(), Collections.singletonList(e), Collections.singletonList(e), counts(0, 0, 0, 1),
+			1, now - 90 * MIN, settings(), "");
 		return new Fixture("longest-when", s, 7);
 	}
 
@@ -258,14 +284,14 @@ final class PanelFixtures
 	{
 		return new Fixture("clear-here", snapshot(WORLD, clearAfter(WORLD), quietTiles(), 10, new Lanes(10)
 			.during(D_START, 14, Lane.TICKS, 1240, Level.BAD).scale(Lane.TICKS, 450, 1290).build(),
-			Collections.singletonList(pictureEvent()), 24, 42), -1);
+			Collections.singletonList(pictureEvent())), -1);
 	}
 
 	/** All clear after a lag on another world: "Last lag 21:47, world 302". */
 	static Fixture clearElsewhere()
 	{
 		return new Fixture("clear-elsewhere", snapshot(WORLD, clearAfter(302), quietTiles(), 60,
-			new Lanes(60).build(), session(), 24, 42), -1);
+			new Lanes(60).build(), session()), -1);
 	}
 
 	/** All clear with no lag this session: "No lag this session.", no when line, 73 px. */
@@ -274,7 +300,7 @@ final class PanelFixtures
 		final Verdict v = new Verdict(Cause.ALL_CLEAR, Confidence.SURE, Level.OK, "Smooth", "No lag this session.",
 			"", "", 0, 0, 0, -1, null, null);
 		return new Fixture("clear-none", snapshot(WORLD, v, quietTiles(), 60, new Lanes(60).build(),
-			Collections.emptyList(), 24, 42, new int[Group.values().length], 0), -1);
+			Collections.emptyList(), new int[Group.values().length], 0), -1);
 	}
 
 	/** Seven events in the 60 min range: six rows and "and 1 more". */
@@ -286,67 +312,32 @@ final class PanelFixtures
 			final Cause cause = i % 2 == 0 ? Cause.SLOW_WORLD : Cause.CLIENT_BUSY;
 			final long start = SESSION_START + (5 + i * 7) * MIN;
 			events.add(event(i, start, 3 + i, WORLD, eventVerdict(cause, i, start, 3 + i), 50, 34, 700, 1100, 450,
-				41, 41, 500, 768, 10, 30, 50));
+				41, 41));
 		}
 		return new Fixture("seven-events", snapshot(WORLD, clearAfter(WORLD), quietTiles(), 60,
-			new Lanes(60).build(), events, events, counts(0, 3, 0, 4, 0), 7, 24, 42, ""), -1);
+			new Lanes(60).build(), events, events, counts(0, 3, 4, 0), 7, ""), -1);
 	}
 
 	/** 500 closed events in the 60 min range: "Lags (500)". */
 	static Fixture fiveHundred()
 	{
 		final List<LagEvent> events = new ArrayList<>();
-		final Cause[] causes = {Cause.UPLOAD_LOSS, Cause.CLIENT_BUSY, Cause.GC_PAUSE, Cause.SLOW_WORLD};
+		final Cause[] causes = {Cause.UPLOAD_LOSS, Cause.CLIENT_BUSY, Cause.SLOW_DRAWING, Cause.SLOW_WORLD};
 		for (int i = 0; i < 500; i++)
 		{
 			final long start = SESSION_START + 60_000L + i * 7_000L;
 			final Cause cause = causes[i % causes.length];
-			events.add(event(i, start, 3, WORLD, eventVerdict(cause, i, start, 3), 50, 34, 640, 900, 300, 41, 41, 500,
-				768, 10, 30, 50));
+			events.add(event(i, start, 3, WORLD, eventVerdict(cause, i, start, 3), 50, 34, 640, 900, 300, 41, 41));
 		}
-		return new Fixture("five-hundred", snapshot(WORLD, clearAfter(WORLD), quietTiles(), 60, new Lanes(60).build(),
-			events, events, counts(125, 125, 125, 125, 0), 500, 24, 42, ""), -1);
+		return new Fixture("five-hundred", snapshot(WORLD, clearAfter(WORLD), quietTiles(), 60,
+			new Lanes(60).build(), events, events, counts(125, 250, 125, 0), 500, ""), -1);
 	}
 
-	/** Five counts, each over 99: "Conn 99+ .. ? 99+", two lines. */
+	/** Four counts, each over 99: "Conn 99+ .. ? 99+", two lines. */
 	static Fixture countsOver99()
 	{
 		return new Fixture("counts-over-99", snapshot(WORLD, clearAfter(WORLD), quietTiles(), 60,
-			new Lanes(60).build(), session(), session(), counts(120, 150, 100, 999, 130), 1499, 24, 42, ""), -1);
-	}
-
-	/** The CPU lane at its widest: "Game 100 %" and "PC 100 %". */
-	static Fixture cpuFull()
-	{
-		final Lanes lanes = new Lanes(10).cpu(100, Level.BAD, "PC 100 %").game(100, "Game 100 %");
-		return new Fixture("cpu-full", snapshot(WORLD, clearAfter(WORLD), quietTiles(), 10, lanes.build(),
-			Collections.emptyList(), 100, 100), -1);
-	}
-
-	/** A Runtime-only PC: logged in, four lanes with values, the CPU lane empty in both series. */
-	static Fixture cpuNone()
-	{
-		final Tile[] tiles = quietTiles();
-		tiles[3] = new Tile(Lane.MEMORY, Level.OK, "51 %", "pause n/a", NoData.NONE);
-		final Lanes lanes = new Lanes(10).none(Lane.CPU).noGame();
-		return new Fixture("cpu-none", snapshot(WORLD, clearAfter(WORLD), tiles, 10, lanes.build(),
-			Collections.emptyList(), -1, -1), -1);
-	}
-
-	/** The CPU lane with the Game half alone: no PC figure, the game at 42 %. */
-	static Fixture cpuGameOnly()
-	{
-		final Lanes lanes = new Lanes(10).none(Lane.CPU).game(42, "Game 42 %");
-		return new Fixture("cpu-game-only", snapshot(WORLD, clearAfter(WORLD), quietTiles(), 10, lanes.build(),
-			Collections.emptyList(), -1, 42), -1);
-	}
-
-	/** The CPU lane with the PC half alone: PC 37 %, no game figure. */
-	static Fixture cpuPcOnly()
-	{
-		final Lanes lanes = new Lanes(10).cpu(37, Level.OK, "PC 37 %").noGame();
-		return new Fixture("cpu-pc-only", snapshot(WORLD, clearAfter(WORLD), quietTiles(), 10, lanes.build(),
-			Collections.emptyList(), 37, -1), -1);
+			new Lanes(60).build(), session(), session(), counts(120, 150, 999, 130), 1499, ""), -1);
 	}
 
 	/** A selected event whose worst tick is 12,400 ms: its Tick cell prints "9,999". */
@@ -354,21 +345,21 @@ final class PanelFixtures
 	{
 		final long start = D_START;
 		final Verdict v = eventVerdict(Cause.DELIVERY_GAP, 3, start, 14);
-		final LagEvent e = event(3, start, 14, WORLD, v, 50, 34, 1800, 12400, 11800, 41, 41, 607, 768, 22, 37, 95);
+		final LagEvent e = event(3, start, 14, WORLD, v, 50, 34, 1800, 12400, 11800, 41, 41);
 		return new Fixture("worst-tick", snapshot(WORLD, clearAfter(WORLD), quietTiles(), 10, new Lanes(10)
 			.during(start, 14, Lane.TICKS, 12400, Level.BAD).scale(Lane.TICKS, 450, 12450).build(),
-			Collections.singletonList(e), 24, 42), 3);
+			Collections.singletonList(e)), 3);
 	}
 
 	/** A selected "Not sure" event: X marks no cell. */
 	static Fixture notSure()
 	{
 		final Verdict v = new Verdict(Cause.NOT_SURE, Confidence.CANT_TELL, Level.BAD, "Can't tell yet",
-			"It was memory clean-up or lost packets.", "Wait for it to happen again.", "", D_START, 14, WORLD, 3,
-			Cause.GC_PAUSE, Cause.UPLOAD_LOSS);
-		final LagEvent e = event(3, D_START, 14, WORLD, v, 50, 34, 952, 1240, 640, 41, 41, 607, 768, 22, 37, 95);
+			"It was a stall or lost packets.", "Wait for it to happen again.", "", D_START, 14, WORLD, 3,
+			Cause.CLIENT_BUSY, Cause.UPLOAD_LOSS);
+		final LagEvent e = event(3, D_START, 14, WORLD, v, 50, 34, 952, 1240, 640, 41, 41);
 		return new Fixture("not-sure", snapshot(WORLD, clearAfter(WORLD), quietTiles(), 10, new Lanes(10).build(),
-			Collections.singletonList(e), 24, 42), 3);
+			Collections.singletonList(e)), 3);
 	}
 
 	/**
@@ -399,15 +390,10 @@ final class PanelFixtures
 		out.add(row("answer-f1", Cause.FRAME_CAP, Level.WARN, Confidence.SURE, "Frame rate is capped at 999",
 			"Set by FPS Control (unfocused). Not lag.", "Raise or turn off that cap."));
 		out.add(row("answer-s3", Cause.CLIENT_BUSY, Level.BAD, Confidence.HINT, "The client itself stalled",
-			"A 9,999 ms freeze. Connection and world were fine.", "Turn plugins off one at a time."));
-		out.add(row("answer-s4", Cause.CLIENT_WAITING, Level.BAD, Confidence.HINT, "The client was kept waiting",
-			"A 9,999 ms freeze, but the client was not busy.", "Close overlays and recorders."));
+			"A 9,999 ms freeze. Connection and world were fine.",
+			"Turn plugins off one at a time; try more memory for RuneLite."));
 		out.add(row("answer-s1", Cause.MAP_LOAD, Level.BAD, Confidence.SURE, "Map loading took 10.0 s",
 			"Extended map loading is set to 5.", "Nothing to fix. It is the map."));
-		out.add(row("answer-g1", Cause.GC_PAUSE, Level.BAD, Confidence.SURE, "Memory clean-up froze the game",
-			"A 9,999 ms pause. Memory 8,192 of 8,192 MB.", "Close the world map. Restart if it repeats."));
-		out.add(row("answer-g2", Cause.HEAP_CAP_LOW, Level.WARN, Confidence.SURE, "Memory limit is set too low",
-			"The client may use only 699 MB. Default is 768.", "Remove the Java memory limit."));
 		out.add(row("answer-x", Cause.NOT_SURE, Level.BAD, Confidence.CANT_TELL, "Can't tell yet",
 			"A 9,999 ms freeze. Its cause was not measured. No ping data.", "Wait for it to happen again."));
 		out.add(new Fixture("answer-measuring", warmingUp().snapshot, -1));
@@ -423,23 +409,22 @@ final class PanelFixtures
 		final long when = cause == Cause.ALL_CLEAR ? D_START : event ? D_START : at("21:40:00");
 		final Verdict v = new Verdict(cause, confidence, level, headline, proof, fix,
 			event ? "Frames and ping were fine." : "", when, event ? 14 : 0, WORLD, event ? 3 : -1,
-			cause == Cause.NOT_SURE ? Cause.GC_PAUSE : null, cause == Cause.NOT_SURE ? Cause.UPLOAD_LOSS : null);
+			cause == Cause.NOT_SURE ? Cause.CLIENT_BUSY : null, cause == Cause.NOT_SURE ? Cause.UPLOAD_LOSS : null);
 		final List<LagEvent> range = new ArrayList<>();
-		range.add(event ? event(3, D_START, 14, WORLD, v, 50, 34, 952, 1240, 640, 41, 41, 607, 768, 22, 37, 95)
+		range.add(event ? event(3, D_START, 14, WORLD, v, 50, 34, 952, 1240, 640, 41, 41)
 			: pictureEvent());
-		return new Fixture(name, snapshot(WORLD, v, quietTiles(), 10, new Lanes(10).build(), range, 24, 42), -1);
+		return new Fixture(name, snapshot(WORLD, v, quietTiles(), 10, new Lanes(10).build(), range), -1);
 	}
 
 	// ----------------------------------------------------------------------------- the pieces
 
-	/** The picture's quiet tiles: 50 fps / 600 ms / 41 ms, was 39 / 51 %. */
+	/** The picture's quiet tiles: 50 fps / 600 ms / 41 ms, was 39. */
 	static Tile[] quietTiles()
 	{
 		return new Tile[] {
 			new Tile(Lane.FRAME_RATE, Level.OK, "50 fps", "worst 35 ms", NoData.NONE),
 			new Tile(Lane.TICKS, Level.OK, "600 ms", PM + "13 ms", NoData.NONE),
-			new Tile(Lane.PING, Level.OK, "41 ms", "was 39 ms", NoData.NONE),
-			new Tile(Lane.MEMORY, Level.OK, "51 %", "pause 23 ms", NoData.NONE)};
+			new Tile(Lane.PING, Level.OK, "41 ms", "was 39 ms", NoData.NONE)};
 	}
 
 	static Tile noData(Lane lane, NoData why)
@@ -453,22 +438,19 @@ final class PanelFixtures
 		final Verdict v = new Verdict(Cause.SLOW_WORLD, Confidence.LIKELY, Level.BAD,
 			"World 416 is struggling, not you", "Ticks 600 to 900+ ms for 14 s. Ping stayed 41 ms, 50 fps.",
 			"Hop to a quieter world.", "Frames and ping were fine.", D_START, 14, WORLD, 3, null, null);
-		return event(3, D_START, 14, WORLD, v, 50, 34, 952, 1240, 640, 41, 41, 607, 768, 22, 37, 95);
+		return event(3, D_START, 14, WORLD, v, 50, 34, 952, 1240, 640, 41, 41);
 	}
 
-	/** The picture's session: four lags, one of each group, (a) to (d). */
+	/** The picture's session: four lags, a connection, two frame rate and a world one, (a) to (d). */
 	static List<LagEvent> session()
 	{
 		final List<LagEvent> out = new ArrayList<>();
 		final long a = at("21:09:12");
 		final long b = at("21:19:05");
 		final long c = at("21:31:40");
-		out.add(event(0, a, 6, WORLD, eventVerdict(Cause.UPLOAD_LOSS, 0, a, 6), 50, 30, 700, 1100, 460, 41, 41, 500,
-			768, 12, 30, 45));
-		out.add(event(1, b, 3, WORLD, eventVerdict(Cause.CLIENT_BUSY, 1, b, 3), 2, 480, 640, 1080, 120, 41, 41, 520,
-			768, 0, 31, 100));
-		out.add(event(2, c, 2, WORLD, eventVerdict(Cause.GC_PAUSE, 2, c, 2), 40, 340, 610, 900, 60, 41, 41, 742, 768,
-			340, 29, 88));
+		out.add(event(0, a, 6, WORLD, eventVerdict(Cause.UPLOAD_LOSS, 0, a, 6), 50, 30, 700, 1100, 460, 41, 41));
+		out.add(event(1, b, 3, WORLD, eventVerdict(Cause.CLIENT_BUSY, 1, b, 3), 2, 480, 640, 1080, 120, 41, 41));
+		out.add(event(2, c, 2, WORLD, eventVerdict(Cause.SLOW_DRAWING, 2, c, 2), 40, 340, 610, 900, 60, 41, 41));
 		out.add(pictureEvent());
 		return out;
 	}
@@ -488,8 +470,8 @@ final class PanelFixtures
 				return "Packets are being lost";
 			case CLIENT_BUSY:
 				return "The client itself stalled";
-			case GC_PAUSE:
-				return "Memory clean-up froze the game";
+			case SLOW_DRAWING:
+				return "The game is drawing slowly";
 			case DELIVERY_GAP:
 				return "The game stopped answering";
 			default:
@@ -512,28 +494,25 @@ final class PanelFixtures
 	}
 
 	static LagEvent event(long id, long startWallMs, int lengthS, int world, Verdict v, int fps, int worstFrameMs,
-		int meanTickGapMs, int worstTickGapMs, int worstCorrectedTickMs, int rttMs, int rttBeforeMs, int heapUsedMb,
-		int heapMaxMb, int gcPauseMs, int sysCpuPct, int gameBusyPct)
+		int meanTickGapMs, int worstTickGapMs, int worstCorrectedTickMs, int rttMs, int rttBeforeMs)
 	{
 		final long startSec = (startWallMs - SESSION_START) / 1000;
 		return new LagEvent(id, startSec, startSec + lengthS - 1, startWallMs, Trigger.TICK_OFF.bit(),
-			Trigger.TICK_OFF, world, 0, 0, 0, fps, worstFrameMs, meanTickGapMs, worstTickGapMs, worstCorrectedTickMs,
-			rttMs, rttMs, rttBeforeMs, 900, 0, gcPauseMs, heapUsedMb, heapMaxMb, sysCpuPct, gameBusyPct, false, false,
-			v);
+			Trigger.TICK_OFF, world, 0, 0, 0, fps, worstFrameMs, meanTickGapMs, worstTickGapMs,
+			worstCorrectedTickMs, rttMs, rttMs, rttBeforeMs, 900, 0, false, false, v);
 	}
 
-	/** The picture's counts: Conn 1, Frame 1, Mem 1, World 1. */
+	/** The picture's counts: Conn 1, Frame 1, World 1. */
 	static int[] pictureCounts()
 	{
-		return counts(1, 1, 1, 1, 0);
+		return counts(1, 2, 1, 0);
 	}
 
-	static int[] counts(int connection, int frame, int memory, int world, int unsure)
+	static int[] counts(int connection, int frame, int world, int unsure)
 	{
 		final int[] c = new int[Group.values().length];
 		c[Group.CONNECTION.ordinal()] = connection;
 		c[Group.FRAME_RATE.ordinal()] = frame;
-		c[Group.MEMORY.ordinal()] = memory;
 		c[Group.WORLD.ordinal()] = world;
 		c[Group.UNSURE.ordinal()] = unsure;
 		return c;
@@ -547,30 +526,29 @@ final class PanelFixtures
 
 	static SettingsView settings()
 	{
-		return new SettingsView(Renderer.CPU, false, false, 0, false, 0, false, "", 0, 0, "", 0, 60, 768,
-			MemorySource.MANAGEMENT, Os.WINDOWS, "1.12.37");
+		return new SettingsView(Renderer.CPU, false, false, 0, false, 0, false, "", 0, 0, "", 0, 60, Os.WINDOWS,
+			"1.12.37");
 	}
 
-	/** A snapshot at 21:52 with the picture's session: four lags, one of each group. */
+	/** A snapshot at 21:52 with the picture's session: four lags. */
 	static PanelSnapshot snapshot(int world, Verdict v, Tile[] tiles, int rangeMinutes, Strip[] strips,
-		List<LagEvent> rangeEvents, int sysCpuPct, int gameBusyPct)
+		List<LagEvent> rangeEvents)
 	{
-		return snapshot(world, v, tiles, rangeMinutes, strips, rangeEvents, sysCpuPct, gameBusyPct, pictureCounts(), 4);
+		return snapshot(world, v, tiles, rangeMinutes, strips, rangeEvents, pictureCounts(), 4);
 	}
 
 	static PanelSnapshot snapshot(int world, Verdict v, Tile[] tiles, int rangeMinutes, Strip[] strips,
-		List<LagEvent> rangeEvents, int sysCpuPct, int gameBusyPct, int[] counts, int total)
+		List<LagEvent> rangeEvents, int[] counts, int total)
 	{
 		return snapshot(world, v, tiles, rangeMinutes, strips, rangeEvents, total == 0 ? Collections.emptyList()
-			: session(), counts, total, sysCpuPct, gameBusyPct, "");
+			: session(), counts, total, "");
 	}
 
 	static PanelSnapshot snapshot(int world, Verdict v, Tile[] tiles, int rangeMinutes, Strip[] strips,
-		List<LagEvent> rangeEvents, List<LagEvent> sessionEvents, int[] counts, int total, int sysCpuPct,
-		int gameBusyPct, String footer)
+		List<LagEvent> rangeEvents, List<LagEvent> sessionEvents, int[] counts, int total, String footer)
 	{
 		return new PanelSnapshot(NOW, ZONE, world, v, tiles, rangeMinutes, NOW - rangeMinutes * MIN, NOW, strips,
-			rangeEvents, sessionEvents, counts, total, SESSION_START, sysCpuPct, gameBusyPct, settings(), footer);
+			rangeEvents, sessionEvents, counts, total, SESSION_START, settings(), footer);
 	}
 
 	/** The same snapshot with another footer. */
@@ -578,12 +556,12 @@ final class PanelFixtures
 	{
 		return new PanelSnapshot(s.wallMs, s.zone, s.world, s.verdict, s.tiles, s.rangeMinutes, s.rangeStartWallMs,
 			s.rangeEndWallMs, s.strips, s.rangeEvents, s.sessionEvents, s.sessionCounts, s.sessionTotal,
-			s.sessionStartWallMs, s.sysCpuPct, s.gameBusyPct, s.settings, footer);
+			s.sessionStartWallMs, s.settings, footer);
 	}
 
 	/**
-	 * The five lanes of a range ending now: quiet by default - 50 fps, 600 ms, 41 ms, heap after collection 392 of
-	 * 768 MB ("51 %"), PC 24 % under a game at 42 % - with the builders the fixtures need.
+	 * The three lanes of a range ending now: quiet by default - 50 fps, 600 ms, 41 ms - with the builders the fixtures
+	 * need.
 	 */
 	static final class Lanes
 	{
@@ -591,12 +569,10 @@ final class PanelFixtures
 		final long end;
 		final int[][] values = new int[Lane.values().length][COLUMNS];
 		final byte[][] levels = new byte[Lane.values().length][COLUMNS];
-		final int[] game = new int[COLUMNS];
-		final int[] min = {0, 450, 0, 0, 0};
-		final int[] max = {60, 900, 100, 768, 100};
-		final String[] now = {"50 fps", "600 ms", "41 ms", "51 %", "PC 24 %"};
-		final Level[] nowLevel = {Level.OK, Level.OK, Level.OK, Level.OK, Level.OK};
-		String now2 = "Game 42 %";
+		final int[] min = {0, 450, 0};
+		final int[] max = {60, 900, 100};
+		final String[] now = {"50 fps", "600 ms", "41 ms"};
+		final Level[] nowLevel = {Level.OK, Level.OK, Level.OK};
 
 		Lanes(int minutes)
 		{
@@ -607,13 +583,12 @@ final class PanelFixtures
 		{
 			end = endWallMs;
 			start = endWallMs - minutes * MIN;
-			final int[] quiet = {50, 600, 41, 392, 24};
+			final int[] quiet = {50, 600, 41};
 			for (int lane = 0; lane < quiet.length; lane++)
 			{
 				Arrays.fill(values[lane], quiet[lane]);
 				Arrays.fill(levels[lane], (byte) Level.OK.ordinal());
 			}
-			Arrays.fill(game, 42);
 		}
 
 		/** One lane holds {@code value} at {@code level} over the columns of those seconds. */
@@ -651,28 +626,6 @@ final class PanelFixtures
 			return value(lane, "", Level.NO_DATA);
 		}
 
-		/** The CPU lane's PC series at a steady value. */
-		Lanes cpu(int pct, Level level, String text)
-		{
-			Arrays.fill(values[Lane.CPU.ordinal()], pct);
-			Arrays.fill(levels[Lane.CPU.ordinal()], (byte) level.ordinal());
-			return value(Lane.CPU, text, level);
-		}
-
-		Lanes game(int pct, String text)
-		{
-			Arrays.fill(game, pct);
-			now2 = text;
-			return this;
-		}
-
-		Lanes noGame()
-		{
-			Arrays.fill(game, Strip.NONE);
-			now2 = "";
-			return this;
-		}
-
 		/** The login screen: every column of every strip NONE, every value "". */
 		Lanes empty()
 		{
@@ -680,7 +633,7 @@ final class PanelFixtures
 			{
 				none(lane);
 			}
-			return noGame();
+			return this;
 		}
 
 		Strip[] build()
@@ -689,10 +642,7 @@ final class PanelFixtures
 			for (Lane lane : Lane.values())
 			{
 				final int i = lane.ordinal();
-				out[i] = lane == Lane.CPU
-					? new Strip(lane, values[i].clone(), levels[i].clone(), min[i], max[i], now[i], nowLevel[i],
-					game.clone(), now2)
-					: new Strip(lane, values[i].clone(), levels[i].clone(), min[i], max[i], now[i], nowLevel[i]);
+				out[i] = new Strip(lane, values[i].clone(), levels[i].clone(), min[i], max[i], now[i], nowLevel[i]);
 			}
 			return out;
 		}
@@ -700,12 +650,18 @@ final class PanelFixtures
 
 	// ================================================================================ the stub
 
-	/** The panel's actions in every test: the report is a fixed text; every call is recorded. */
+	/**
+	 * The panel's actions in every test: the report is a fixed text and its verdict a fixed line, both handed back at
+	 * once on the calling thread, as the plugin hands them back on the Swing thread; every call is recorded.
+	 */
 	static final class StubActions implements PanelActions
 	{
 		static final String REPORT = "2h Why Lag report - the stub's fixed text";
+		static final String VERDICT = "The stub's fixed verdict";
 		final List<Integer> ranges = new ArrayList<>();
 		final List<PanelSnapshot> reported = new ArrayList<>();
+		/** Every setting the gear menu wrote, as "badgeShow=false" and so on, in the order written. */
+		final List<String> written = new ArrayList<>();
 		int activated;
 
 		@Override
@@ -715,20 +671,48 @@ final class PanelFixtures
 		}
 
 		@Override
+		public void badgeShow(boolean on)
+		{
+			written.add("badgeShow=" + on);
+		}
+
+		@Override
+		public void badgeStyle(BadgeStyle style)
+		{
+			written.add("badgeStyle=" + style.name());
+		}
+
+		@Override
+		public void badgeWhenSmooth(WhenSmooth choice)
+		{
+			written.add("badgeWhenSmooth=" + choice.name());
+		}
+
+		@Override
+		public void badgeChatLine(boolean on)
+		{
+			written.add("badgeChatLine=" + on);
+		}
+
+		@Override
 		public void activated()
 		{
 			activated++;
 		}
 
 		@Override
-		public String report(PanelSnapshot s)
+		public void testAndReport(PanelSnapshot s, Consumer<Report> back)
 		{
 			reported.add(s);
-			return REPORT;
+			back.accept(new Report(REPORT, VERDICT));
 		}
 	}
 
 	// ============================================================================ the panel
+
+	/** The Troubleshoot window without a window: its controls are built and pressed, no display is needed. */
+	static final BiFunction<Window, Predicate<String>, TroubleshootDialog> WINDOWLESS =
+		(owner, clipboard) -> new TroubleshootDialog(clipboard);
 
 	/** A panel of the fixture, both rows folded or both open, outside developer mode. */
 	static WhyLagPanel panel(Fixture f, boolean open)
@@ -747,6 +731,7 @@ final class PanelFixtures
 		{
 			final WhyLagPanel p = new WhyLagPanel(actions, GraphRange.of(f.snapshot.rangeMinutes), developerMode);
 			p.clipboard = text -> true;
+			p.dialogOpener = WINDOWLESS;
 			p.onActivate();
 			p.show(f.snapshot);
 			if (f.selected >= 0)
@@ -755,8 +740,31 @@ final class PanelFixtures
 			}
 			p.fold(graphsOpen, lagsOpen);
 			layOut(p);
+			if (f.menuOpen)
+			{
+				pressGear(p);
+			}
 			return p;
 		});
+	}
+
+	/** What Swing does when a popup menu goes away: every listener is told it is about to become invisible. */
+	static void closePopup(JPopupMenu menu)
+	{
+		edt(() ->
+		{
+			for (PopupMenuListener l : menu.getPopupMenuListeners())
+			{
+				l.popupMenuWillBecomeInvisible(new PopupMenuEvent(menu));
+			}
+		});
+	}
+
+	/** A press on the middle of the header's gear, which builds the gear menu (it is not shown: there is no screen). */
+	static void pressGear(WhyLagPanel p)
+	{
+		final Rectangle gear = p.header().gearBounds();
+		press(p.header(), gear.x + gear.width / 2, gear.y + gear.height / 2);
 	}
 
 	/** Sizes the panel to its preferred size and places its blocks (a panel never shown has no peer to validate). */
@@ -923,6 +931,58 @@ final class PanelFixtures
 			}
 			return img;
 		});
+	}
+
+	/**
+	 * A whole panel painted as Swing paints it, and, when the fixture has its gear menu open, the menu painted over it
+	 * where it would stand: under the gear, its right edge at the gear's. The menu is the one the panel built at the
+	 * press on the gear, laid out and painted without a window, so it wears the test's look and feel, not the
+	 * client's.
+	 */
+	static BufferedImage paintPanel(Fixture f, WhyLagPanel p)
+	{
+		final BufferedImage img = paintPanel(p);
+		if (f.menuOpen)
+		{
+			onEdt(() ->
+			{
+				final JPopupMenu menu = p.menu();
+				final Dimension d = menu.getPreferredSize();
+				menu.setSize(d);
+				layOutTree(menu);
+				final Rectangle gear = p.header().gearBounds();
+				final Graphics2D g = img.createGraphics();
+				try
+				{
+					g.translate(p.header().getX() + gear.x + gear.width - d.width,
+						p.header().getY() + p.header().getHeight());
+					menu.paint(g);
+				}
+				finally
+				{
+					g.dispose();
+				}
+				return null;
+			});
+		}
+		return img;
+	}
+
+	/** Places the children of a container that was never shown, and theirs, each at its own preferred size. */
+	static void layOutTree(java.awt.Container c)
+	{
+		c.doLayout();
+		for (Component child : c.getComponents())
+		{
+			if (child instanceof java.awt.Container)
+			{
+				if (child.getWidth() == 0 && child.getHeight() == 0)
+				{
+					child.setSize(child.getPreferredSize());
+				}
+				layOutTree((java.awt.Container) child);
+			}
+		}
 	}
 
 	/**
@@ -1163,8 +1223,7 @@ final class PanelFixtures
 		private static int countOf(Map<Component, Integer> counts, WhyLagPanel p)
 		{
 			final List<Component> mine = new ArrayList<>(Arrays.asList(p, p.header(), p.card(), p.cells(),
-				p.rangeRow(), p.graphsRow(), p.strips(), p.lagsRow(), p.eventList(), p.sessionHeader(), p.counts(),
-				p.buttons()));
+				p.rangeRow(), p.graphsRow(), p.strips(), p.lagsRow(), p.eventList(), p.sessionHeader(), p.counts()));
 			if (p.footer() != null)
 			{
 				mine.add(p.footer());

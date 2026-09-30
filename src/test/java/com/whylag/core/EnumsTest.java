@@ -6,55 +6,29 @@ import java.util.Set;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
- * The small enums and codes of contract 3.2: the five lanes, of which the tiles are the first four; no wave-one
- * group on the CPU lane; the operating systems and their units (C1); the cap sources and the renderers' words; the
- * confidence steps; one bit per trigger; the state codes; the flag bits and the mask of the flags alone; the groups'
- * lanes and labels; the ordinals that are stored; and the game badge's enums - its two settings and its five
- * pictures. {@link Cause} has its own test, and the stored NAMES of the badge's settings are pinned in
- * {@code WhyLagConfigTest}.
+ * The small enums and codes of contract 3.2: the three lanes, each with a tile; the operating systems and their
+ * units (C1); the cap sources and the renderers' words; the confidence steps; one bit per trigger; the state codes;
+ * the flag bits and the mask of the flags alone; the groups' lanes and labels; the ordinals that are stored; and
+ * the game badge's enums - its two settings and its four pictures. {@link Cause} has its own test, and the stored
+ * NAMES of the badge's settings are pinned in {@code WhyLagConfigTest}.
  */
 public class EnumsTest
 {
 	@Test
-	public void lanesAreFiveAndTheTilesAreTheFirstFour()
+	public void lanesAreThreeAndEachHasATile()
 	{
-		assertEquals(5, Lane.values().length);
-		assertEquals(4, Lane.TILES);
-		assertEquals(Arrays.asList(Lane.FRAME_RATE, Lane.TICKS, Lane.PING, Lane.MEMORY, Lane.CPU),
-			Arrays.asList(Lane.values()));
+		assertEquals(3, Lane.values().length);
+		assertEquals(3, Lane.TILES);
+		assertEquals(Lane.values().length, Lane.TILES);
+		assertEquals(Arrays.asList(Lane.FRAME_RATE, Lane.TICKS, Lane.PING), Arrays.asList(Lane.values()));
 		assertEquals("Frame rate", Lane.FRAME_RATE.label());
 		assertEquals("Ticks", Lane.TICKS.label());
 		assertEquals("Ping", Lane.PING.label());
-		assertEquals("Memory", Lane.MEMORY.label());
-		assertEquals("CPU", Lane.CPU.label());
-		for (int i = 0; i < Lane.TILES; i++)
-		{
-			assertNotEquals("the tiles are the first four lanes; CPU has no tile", Lane.CPU, Lane.values()[i]);
-		}
-		assertEquals("the CPU lane is the fifth strip, the one after the tiles", Lane.TILES, Lane.CPU.ordinal());
-	}
-
-	/** No wave-one group has the CPU lane as its culprit lane, so no wave-one band paints it (S5 will, later). */
-	@Test
-	public void noWaveOneGroupHasTheCpuLane()
-	{
-		for (Group g : Group.values())
-		{
-			assertNotEquals(g + " is on the CPU lane", Lane.CPU, g.lane());
-		}
-		for (Cause c : Cause.values())
-		{
-			if (c.inWaveOne())
-			{
-				assertNotEquals(c + " blames the CPU lane", Lane.CPU, c.group().lane());
-			}
-		}
 	}
 
 	@Test
@@ -123,7 +97,7 @@ public class EnumsTest
 			assertTrue(bits.add(t.bit()));
 			all |= t.bit();
 		}
-		assertEquals(255, all);
+		assertEquals("seven triggers, one bit each", 127, all);
 	}
 
 	@Test
@@ -207,17 +181,16 @@ public class EnumsTest
 		assertEquals("Hide", WhenSmooth.HIDE.toString());
 	}
 
-	/** The badge's five pictures, and each one's word in the icon files' names; NONE has no file. */
+	/** The badge's four pictures, and each one's word in the icon files' names; NONE has no file. */
 	@Test
 	public void icons()
 	{
-		assertEquals(Arrays.asList(Icon.NONE, Icon.WORLD, Icon.LINE, Icon.PC, Icon.MEMORY, Icon.UNKNOWN),
+		assertEquals(Arrays.asList(Icon.NONE, Icon.WORLD, Icon.LINE, Icon.PC, Icon.UNKNOWN),
 			Arrays.asList(Icon.values()));
 		assertEquals("", Icon.NONE.file());
 		assertEquals("world", Icon.WORLD.file());
 		assertEquals("line", Icon.LINE.file());
 		assertEquals("pc", Icon.PC.file());
-		assertEquals("memory", Icon.MEMORY.file());
 		assertEquals("unknown", Icon.UNKNOWN.file());
 	}
 
@@ -226,13 +199,11 @@ public class EnumsTest
 	{
 		assertEquals(Lane.PING, Group.CONNECTION.lane());
 		assertEquals(Lane.FRAME_RATE, Group.FRAME_RATE.lane());
-		assertEquals(Lane.MEMORY, Group.MEMORY.lane());
 		assertEquals(Lane.TICKS, Group.WORLD.lane());
 		assertNull(Group.UNSURE.lane());
 		assertNull(Group.NONE.lane());
 		assertEquals("Conn", Group.CONNECTION.shortLabel());
 		assertEquals("Frame", Group.FRAME_RATE.shortLabel());
-		assertEquals("Mem", Group.MEMORY.shortLabel());
 		assertEquals("World", Group.WORLD.shortLabel());
 		assertEquals("?", Group.UNSURE.shortLabel());
 		assertEquals("Connection", Group.CONNECTION.label());
@@ -249,10 +220,13 @@ public class EnumsTest
 		assertEquals(2, Level.BAD.ordinal());
 		assertEquals(3, Level.NO_DATA.ordinal());
 		assertEquals(0, Group.CONNECTION.ordinal());
-		assertEquals(5, Group.NONE.ordinal());
+		assertEquals(1, Group.FRAME_RATE.ordinal());
+		assertEquals(2, Group.WORLD.ordinal());
+		assertEquals(3, Group.UNSURE.ordinal());
+		assertEquals(4, Group.NONE.ordinal());
 		assertEquals(0, NoData.NONE.ordinal());
 		assertEquals(9, NoData.values().length);
-		assertEquals(5, Lane.values().length);
-		assertEquals(4, Lane.CPU.ordinal());
+		assertEquals(3, Lane.values().length);
+		assertEquals(2, Lane.PING.ordinal());
 	}
 }

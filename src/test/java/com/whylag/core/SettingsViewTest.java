@@ -191,45 +191,24 @@ public class SettingsViewTest
 	@Test
 	public void unknownSettings()
 	{
-		final SettingsView v = SettingsView.unknown(512, Os.LINUX, MemorySource.MANAGEMENT);
+		final SettingsView v = SettingsView.unknown(Os.LINUX);
 		assertEquals(Renderer.UNKNOWN, v.renderer);
 		assertEquals(CapSource.NONE, v.capSource(true));
 		assertEquals(CapSource.NONE, v.capSource(false));
 		assertEquals(0, v.capFps(true));
 		assertEquals(0, v.refreshHz);
-		assertEquals(512, v.heapMaxMb);
 		assertEquals(Os.LINUX, v.os);
 		assertEquals("", v.vsyncMode);
 		assertEquals("", v.antiAliasing);
 		assertEquals("", v.clientVersion);
-		assertEquals(MemorySource.MANAGEMENT, v.memorySource);
 		assertFalse(v.fpsControlActive);
-	}
-
-	/** A Runtime-only probe is never reported as MANAGEMENT: the settings not read yet keep the source given. */
-	@Test
-	public void unknownKeepsTheMemorySource()
-	{
-		assertEquals(MemorySource.RUNTIME, SettingsView.unknown(512, Os.LINUX, MemorySource.RUNTIME).memorySource);
-		assertEquals(MemorySource.MANAGEMENT,
-			SettingsView.unknown(768, Os.WINDOWS, MemorySource.MANAGEMENT).memorySource);
-	}
-
-	/** A null memory source is kept as RUNTIME, the safe side: on RUNTIME wave one never names memory. */
-	@Test
-	public void nullMemorySourceIsRuntime()
-	{
-		final SettingsView v = new SettingsView(Renderer.CPU, false, false, 0, false, 0, false, "", 0, 50, "", 3, 60,
-			768, null, Os.WINDOWS, "");
-		assertEquals(MemorySource.RUNTIME, v.memorySource);
-		assertEquals(MemorySource.RUNTIME, SettingsView.unknown(768, Os.WINDOWS, null).memorySource);
 	}
 
 	@Test
 	public void nullTextsAreEmpty()
 	{
-		final SettingsView v = new SettingsView(null, false, false, 0, false, 0, false, null, 0, 0, null, 0, 0, 768,
-			MemorySource.RUNTIME, Os.WINDOWS, null);
+		final SettingsView v = new SettingsView(null, false, false, 0, false, 0, false, null, 0, 0, null, 0, 0,
+			Os.WINDOWS, null);
 		assertEquals(Renderer.UNKNOWN, v.renderer);
 		assertEquals("", v.vsyncMode);
 		assertEquals("", v.antiAliasing);
@@ -242,7 +221,7 @@ public class SettingsViewTest
 		int refreshHz)
 	{
 		return new SettingsView(renderer, fpsControlActive, limitFps, maxFps, limitFpsUnfocused, maxFpsUnfocused,
-			unlockFps, vsyncMode, fpsTarget, 50, "MSAA_2", 3, refreshHz, 768, MemorySource.MANAGEMENT, Os.WINDOWS,
+			unlockFps, vsyncMode, fpsTarget, 50, "MSAA_2", 3, refreshHz, Os.WINDOWS,
 			"1.12.38");
 	}
 }

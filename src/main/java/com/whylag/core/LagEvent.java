@@ -9,16 +9,7 @@ package com.whylag.core;
  * {@code meanTickGapMs} (every gap, no trim), {@code worstTickGapMs}, {@code worstCorrectedTickMs} (the largest
  * {@link TickRing#corrected}), {@code rttMs} / {@code rttMaxMs} (median and highest fresh RTT), {@code rttBeforeMs}
  * (this world's usual RTT when the event OPENED), {@code sentUnits} / {@code resentUnits} (over the span and
- * {@link Thresholds#RESENT_LOOK_S} either side), {@code gcPauseMs}, {@code heapUsedMb} (the highest in the span),
- * {@code heapMaxMb} (the limit; -1 when the settings' limit is 0 or less, which means unknown, contract 3.7),
- * {@code sysCpuPct} (the highest whole-PC CPU % of any second in the span) and {@code gameBusyPct} (the highest
- * {@link Fmt#busyPct} of any second in the span). Every one of them is -1 when there is no data.
- *
- * <p><b>{@code gcPauseMs} has two meanings that must not be mixed up.</b> It is the longest known pause touching
- * the span, {@code GcRing.longestPauseMs(startSec x 1000, (endSec + 1) x 1000 - 1)}: the span's first to its last
- * ms, both included. 0 = measured, and no pause touched the span. -1 = pauses cannot be known (the settings' memory
- * source is {@link MemorySource#RUNTIME}); on {@link MemorySource#MANAGEMENT} it is never -1. The panel shows them
- * apart: "pause 0 ms" against "pause n/a".
+ * {@link Thresholds#RESENT_LOOK_S} either side). Every one of them is -1 when there is no data.
  *
  * <p><b>The id</b> is 0, 1, 2 ... in the order the detector opened the events, from one counter of the detector's
  * own that nothing restarts (not a hop, a world change, a login or a lost connection). An event keeps it from
@@ -35,10 +26,9 @@ public final class LagEvent
 	public final int triggers;
 	/** The trigger that opened it. */
 	public final Trigger first;
-	/** -1 = no data; {@code gcPauseMs}: 0 = measured and none, -1 = cannot be known (see the class notes). */
+	/** -1 = no data. */
 	public final int world, region, players, npcs, fps, worstFrameMs, meanTickGapMs, worstTickGapMs,
-		worstCorrectedTickMs, rttMs, rttMaxMs, rttBeforeMs, sentUnits, resentUnits, gcPauseMs, heapUsedMb,
-		heapMaxMb, sysCpuPct, gameBusyPct;
+		worstCorrectedTickMs, rttMs, rttMaxMs, rttBeforeMs, sentUnits, resentUnits;
 	public final boolean open, becameCondition;
 	/** Null until judged. */
 	public final Verdict verdict;
@@ -46,8 +36,7 @@ public final class LagEvent
 	public LagEvent(long id, long startSec, long endSec, long startWallMs, int triggers, Trigger first,
 		int world, int region, int players, int npcs, int fps, int worstFrameMs, int meanTickGapMs,
 		int worstTickGapMs, int worstCorrectedTickMs, int rttMs, int rttMaxMs, int rttBeforeMs, int sentUnits,
-		int resentUnits, int gcPauseMs, int heapUsedMb, int heapMaxMb, int sysCpuPct, int gameBusyPct,
-		boolean open, boolean becameCondition, Verdict verdict)
+		int resentUnits, boolean open, boolean becameCondition, Verdict verdict)
 	{
 		this.id = id;
 		this.startSec = startSec;
@@ -69,11 +58,6 @@ public final class LagEvent
 		this.rttBeforeMs = rttBeforeMs;
 		this.sentUnits = sentUnits;
 		this.resentUnits = resentUnits;
-		this.gcPauseMs = gcPauseMs;
-		this.heapUsedMb = heapUsedMb;
-		this.heapMaxMb = heapMaxMb;
-		this.sysCpuPct = sysCpuPct;
-		this.gameBusyPct = gameBusyPct;
 		this.open = open;
 		this.becameCondition = becameCondition;
 		this.verdict = verdict;
@@ -102,7 +86,6 @@ public final class LagEvent
 	{
 		return new LagEvent(id, startSec, endSec, startWallMs, triggers, first, world, region, players, npcs, fps,
 			worstFrameMs, meanTickGapMs, worstTickGapMs, worstCorrectedTickMs, rttMs, rttMaxMs, rttBeforeMs,
-			sentUnits, resentUnits, gcPauseMs, heapUsedMb, heapMaxMb, sysCpuPct, gameBusyPct, open,
-			becameCondition, v);
+			sentUnits, resentUnits, open, becameCondition, v);
 	}
 }

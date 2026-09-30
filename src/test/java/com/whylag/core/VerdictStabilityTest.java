@@ -42,7 +42,7 @@ public class VerdictStabilityTest
 		final Trace t = Trace.steady(seconds).usual(USUAL);
 		for (int sec : stallSeconds)
 		{
-			t.frameGap(sec, 600, 480).busy(sec, 700);
+			t.frameGap(sec, 600, 480);
 		}
 		return t;
 	}
@@ -292,14 +292,15 @@ public class VerdictStabilityTest
 		}
 		assertSame("asked twice in one second", first, step(engine, s, t.settings(), 200));
 
-		// A condition that stays the same: G2 has no number that moves.
-		final SettingsView low = VerdictCauseTest.heapLimit(512);
+		// A condition that stays the same: a high, steady ping has no number that moves.
+		final Trace pingy = Trace.steady(200).usual(USUAL).rtt(0, 199, 180);
+		final Session ps = pingy.build();
 		final VerdictEngine lowEngine = new VerdictEngine();
 		Verdict shown = null;
 		for (int now = 1; now <= 200; now++)
 		{
-			final Verdict v = step(lowEngine, s, low, now);
-			if (v.cause == Cause.HEAP_CAP_LOW)
+			final Verdict v = step(lowEngine, ps, pingy.settings(), now);
+			if (v.cause == Cause.PING_HIGH)
 			{
 				if (shown != null)
 				{
@@ -459,7 +460,7 @@ public class VerdictStabilityTest
 	public void anEmptySessionIsNotLoggedIn()
 	{
 		final Session s = new Session(1L, 0L, Os.OTHER, java.time.ZoneOffset.UTC);
-		final SettingsView unknown = SettingsView.unknown(0, Os.OTHER, MemorySource.RUNTIME);
+		final SettingsView unknown = SettingsView.unknown(Os.OTHER);
 		final VerdictEngine engine = new VerdictEngine();
 		final Verdict v = engine.current(s, 0, 0, unknown);
 		assertEquals(Answer.HEAD_NOT_LOGGED_IN, v.headline);
@@ -547,16 +548,15 @@ public class VerdictStabilityTest
 	@Test
 	public void aHopDoesNotRestartAConditionsStreak()
 	{
-		final SettingsView low = VerdictCauseTest.heapLimit(512);
-		for (Trace t : new Trace[] {Trace.steady(200).usual(USUAL).hop(100, 302),
-			Trace.steady(200).usual(USUAL).disconnect(100)})
+		for (Trace t : new Trace[] {Trace.steady(200).usual(USUAL).rtt(0, 199, 180).hop(100, 302),
+			Trace.steady(200).usual(USUAL).rtt(0, 199, 180).disconnect(100)})
 		{
 			final Session s = t.build();
 			final VerdictEngine engine = new VerdictEngine();
 			Verdict back = null;
 			for (int now = 1; now <= 200; now++)
 			{
-				final Verdict v = step(engine, s, low, now);
+				final Verdict v = step(engine, s, t.settings(), now);
 				if (now <= Thresholds.CONDITION_HOLD_S)
 				{
 					assertEquals("at " + now, Cause.ALL_CLEAR, v.cause);
@@ -567,7 +567,7 @@ public class VerdictStabilityTest
 				}
 				else
 				{
-					assertEquals("at " + now, Cause.HEAP_CAP_LOW, v.cause);
+					assertEquals("at " + now, Cause.PING_HIGH, v.cause);
 					assertEquals("dated from when it began winning, at " + now, s.wallMsOf(0), v.whenWallMs);
 					if (now == 102)
 					{
@@ -616,8 +616,8 @@ public class VerdictStabilityTest
 	@Test
 	public void aNewLoginForgetsAConditionsStreak()
 	{
-		final SettingsView low = VerdictCauseTest.heapLimit(512);
-		final Trace t = Trace.steady(300).usual(USUAL).disconnect(150);
+		final Trace t = Trace.steady(300).usual(USUAL).rtt(0, 299, 180).disconnect(150);
+		final SettingsView low = t.settings();
 		final Session s = t.build();
 		final VerdictEngine engine = new VerdictEngine();
 		for (int now = 1; now <= 150; now++)
@@ -625,7 +625,7 @@ public class VerdictStabilityTest
 			step(engine, s, low, now);
 		}
 		final Verdict before = step(engine, s, low, 150);
-		assertEquals(Cause.HEAP_CAP_LOW, before.cause);
+		assertEquals(Cause.PING_HIGH, before.cause);
 		assertEquals(s.wallMsOf(0), before.whenWallMs);
 		assertEquals(Answer.HEAD_NOT_LOGGED_IN, step(engine, s, low, 151).headline);
 
@@ -635,10 +635,10 @@ public class VerdictStabilityTest
 		{
 			final Verdict v = step(engine, s, low, now);
 			assertNotEquals("no warm-up, at " + now, Answer.HEAD_MEASURING, v.headline);
-			assertNotEquals("the streak starts again with the new login, at " + now, Cause.HEAP_CAP_LOW, v.cause);
+			assertNotEquals("the streak starts again with the new login, at " + now, Cause.PING_HIGH, v.cause);
 		}
 		final Verdict after = step(engine, s, low, ready);
-		assertEquals(Cause.HEAP_CAP_LOW, after.cause);
+		assertEquals(Cause.PING_HIGH, after.cause);
 		assertEquals("dated from the first step of the new login", s.wallMsOf(151), after.whenWallMs);
 		assertNotEquals("not from the stretch before it", s.wallMsOf(0), after.whenWallMs);
 	}
@@ -646,8 +646,7 @@ public class VerdictStabilityTest
 	@Test
 	public void allClearNamesTheNewestEvent()
 	{
-		final Trace t = stallTrace(600, 100).hop(200, 302).frameGap(240, 600, 480).busy(240, 700)
-			.frameGap(245, 600, 480).busy(245, 700);
+		final Trace t = stallTrace(600, 100).hop(200, 302).frameGap(240, 600, 480).frameGap(245, 600, 480);
 		final Session s = t.build();
 		final VerdictEngine none = new VerdictEngine();
 		final Verdict quiet = step(none, s, t.settings(), 50);

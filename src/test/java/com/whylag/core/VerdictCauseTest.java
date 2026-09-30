@@ -10,7 +10,7 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
- * One synthetic trace per rule (contract section 7, L4; section 8): each of the fifteen rules answers its own
+ * One synthetic trace per rule (contract section 7, L4; section 8): each of the twelve rules answers its own
  * trace, at its full ceiling, and no other rule is within the margin. Every trace carries a usual of 40
  * ({@code Trace.usual(40)}, and {@code rttBeforeMs} 40 on its event), so no rule loses a step for a missing usual.
  *
@@ -104,8 +104,7 @@ public class VerdictCauseTest
 		LagEvent on(Session s)
 		{
 			return new LagEvent(id, from, to, s.wallMsOf(from), triggers, first, s.seconds.world(from), 0, 0, 0,
-				7777, 7777, 7777, 7777, 7777, 7777, 7777, rttBefore, 7777, 7777, 7777, 7777, 7777, 77, 77, open,
-				false, null);
+				7777, 7777, 7777, 7777, 7777, 7777, 7777, rttBefore, 7777, 7777, open, false, null);
 		}
 	}
 
@@ -128,23 +127,10 @@ public class VerdictCauseTest
 
 	static SettingsView fpsControl(int maxFps)
 	{
-		return new SettingsView(Renderer.CPU, true, true, maxFps, false, 0, false, "", 0, 0, "", 0, 60, 768,
-			MemorySource.MANAGEMENT, Os.WINDOWS, "");
+		return new SettingsView(Renderer.CPU, true, true, maxFps, false, 0, false, "", 0, 0, "", 0, 60, Os.WINDOWS, "");
 	}
 
-	static SettingsView heapLimit(int heapMaxMb)
-	{
-		return new SettingsView(Renderer.CPU, false, false, 0, false, 0, false, "", 0, 0, "", 0, 60, heapMaxMb,
-			MemorySource.MANAGEMENT, Os.WINDOWS, "");
-	}
-
-	static SettingsView runtimeMemory()
-	{
-		return new SettingsView(Renderer.CPU, false, false, 0, false, 0, false, "", 0, 0, "", 0, 60, 768,
-			MemorySource.RUNTIME, Os.WINDOWS, "");
-	}
-
-	// ------------------------------------------------------------------ the fifteen traces
+	// ------------------------------------------------------------------ the twelve traces
 
 	static Trace d1Trace()
 	{
@@ -154,17 +140,6 @@ public class VerdictCauseTest
 	static Case d1()
 	{
 		return new Case("D1", d1Trace(), new LagEventSpec(0, 120, 120, Trigger.DISCONNECT), 200);
-	}
-
-	static Trace g1Trace()
-	{
-		return Trace.steady(200).usual(USUAL).heap(120, 120, 742).gcPause(120, 100, 340, 400)
-			.frameGap(120, 450, 350).busy(120, 700);
-	}
-
-	static Case g1()
-	{
-		return new Case("G1", g1Trace(), new LagEventSpec(1, 120, 120, Trigger.GC_PAUSE, Trigger.FRAME_GAP), 200);
 	}
 
 	static Trace s1Trace()
@@ -212,22 +187,12 @@ public class VerdictCauseTest
 
 	static Trace s3Trace()
 	{
-		return Trace.steady(200).usual(USUAL).frameGap(120, 600, 480).busy(120, 700);
+		return Trace.steady(200).usual(USUAL).frameGap(120, 600, 480);
 	}
 
 	static Case s3()
 	{
 		return new Case("S3", s3Trace(), new LagEventSpec(6, 120, 120, Trigger.FRAME_GAP), 200);
-	}
-
-	static Trace s4Trace()
-	{
-		return Trace.steady(200).usual(USUAL).frameGap(120, 600, 480).busy(120, 150);
-	}
-
-	static Case s4()
-	{
-		return new Case("S4", s4Trace(), new LagEventSpec(7, 120, 120, Trigger.FRAME_GAP), 200);
 	}
 
 	static Trace n6Trace()
@@ -260,11 +225,6 @@ public class VerdictCauseTest
 		return new Case("W1c", Trace.steady(200).usual(USUAL).ticksEvery(100, 199, 640), null, 200);
 	}
 
-	static Case g2()
-	{
-		return new Case("G2", Trace.steady(200).usual(USUAL).settings(heapLimit(512)), null, 200);
-	}
-
 	static Case v2()
 	{
 		return new Case("V2", Trace.steady(200).usual(USUAL), null, 200);
@@ -274,19 +234,16 @@ public class VerdictCauseTest
 	{
 		final List<Case> out = new ArrayList<>();
 		out.add(d1());
-		out.add(g1());
 		out.add(s1());
 		out.add(n3());
 		out.add(n2());
 		out.add(w1());
 		out.add(s3());
-		out.add(s4());
 		out.add(n6());
 		out.add(f1());
 		out.add(n1());
 		out.add(f2());
 		out.add(w1c());
-		out.add(g2());
 		out.add(v2());
 		return out;
 	}
@@ -294,10 +251,10 @@ public class VerdictCauseTest
 	// ------------------------------------------------------------------ the tests
 
 	@Test
-	public void thereIsOneTraceForEachOfTheFifteenRules()
+	public void thereIsOneTraceForEachOfTheTwelveRules()
 	{
 		final List<Case> cases = all();
-		assertEquals(15, cases.size());
+		assertEquals(12, cases.size());
 		for (int i = 0; i < cases.size(); i++)
 		{
 			assertSame("in rank order", Rules.ALL[i], cases.get(i).rule());
@@ -310,14 +267,6 @@ public class VerdictCauseTest
 		final Verdict v = judged(d1());
 		assertWords(v, "Connection lost at 20:54", "Ping and re-sends were fine just before.",
 			"Wait a minute, then log in again.");
-	}
-
-	@Test
-	public void g1AnswersAMemoryPause()
-	{
-		final Verdict v = judged(g1());
-		assertWords(v, "Memory clean-up froze the game", "A 340 ms pause. Memory 742 of 768 MB.",
-			"Close the world map. Restart if it repeats.");
 	}
 
 	@Test
@@ -360,21 +309,13 @@ public class VerdictCauseTest
 	}
 
 	@Test
-	public void s3AnswersABusyStall()
+	public void s3AnswersAClientStall()
 	{
 		final Case c = s3();
 		final Verdict v = judged(c);
-		assertEquals("both supports", 100, Rules.S3.score(c.evidence()));
+		assertEquals("its one support, a calm ping", 90, Rules.S3.score(c.evidence()));
 		assertWords(v, "The client itself stalled", "A 480 ms freeze. Connection and world were fine.",
-			"Turn plugins off one at a time.");
-	}
-
-	@Test
-	public void s4AnswersAnIdleStall()
-	{
-		final Verdict v = judged(s4());
-		assertWords(v, "The client was kept waiting", "A 480 ms freeze, but the client was not busy.",
-			"Close overlays and recorders.");
+			"Turn plugins off one at a time; try more memory for RuneLite.");
 	}
 
 	@Test
@@ -418,14 +359,6 @@ public class VerdictCauseTest
 		assertEquals("with its support", 65, Rules.W1C.score(c.evidence()));
 		assertWords(v, "This world is running slow", "Ticks take 640 ms here. Ping and frames are fine.",
 			"Hop to a quieter world.");
-	}
-
-	@Test
-	public void g2AnswersALowMemoryLimit()
-	{
-		final Verdict v = judged(g2());
-		assertWords(v, "Memory limit is set too low", "The client may use only 512 MB. Default is 768.",
-			"Remove the Java memory limit.");
 	}
 
 	@Test

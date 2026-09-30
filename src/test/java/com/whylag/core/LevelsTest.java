@@ -2,12 +2,8 @@ package com.whylag.core;
 
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
 
-/**
- * Each line of the tile level rules of contract 5.2 and of the CPU lane (5.3), AT the line and one below it; and
- * the memory rule's two meanings of -1 (3.8): with both halves left out it is OK, and it never answers NO_DATA.
- */
+/** Each line of the tile level rules of contract 5.2, AT the line and one below it. */
 public class LevelsTest
 {
 	@Test
@@ -77,84 +73,5 @@ public class LevelsTest
 		assertEquals(Level.OK, Levels.ping(Thresholds.PING_WARN_MS - 1));
 		assertEquals(Level.OK, Levels.ping(0));
 		assertEquals(Level.NO_DATA, Levels.ping(-1));
-	}
-
-	@Test
-	public void memoryHeapAfterCollectionLines()
-	{
-		assertEquals(Level.BAD, Levels.memory(Thresholds.HEAP_BAD_PCT, -1));
-		assertEquals(Level.WARN, Levels.memory(Thresholds.HEAP_BAD_PCT - 1, -1));
-		assertEquals(Level.WARN, Levels.memory(Thresholds.HEAP_WARN_PCT, -1));
-		assertEquals(Level.OK, Levels.memory(Thresholds.HEAP_WARN_PCT - 1, -1));
-	}
-
-	@Test
-	public void memoryPauseLines()
-	{
-		assertEquals(Level.BAD, Levels.memory(-1, Thresholds.GC_BAD_MS));
-		assertEquals(Level.WARN, Levels.memory(-1, Thresholds.GC_BAD_MS - 1));
-		assertEquals(Level.WARN, Levels.memory(-1, Thresholds.GC_WARN_MS));
-		assertEquals(Level.OK, Levels.memory(-1, Thresholds.GC_WARN_MS - 1));
-	}
-
-	@Test
-	public void memoryIsTheWorseOfTheTwoHalves()
-	{
-		assertEquals(Level.BAD, Levels.memory(40, Thresholds.GC_BAD_MS));
-		assertEquals(Level.BAD, Levels.memory(Thresholds.HEAP_BAD_PCT, 10));
-		assertEquals(Level.WARN, Levels.memory(Thresholds.HEAP_WARN_PCT, Thresholds.GC_WARN_MS - 1));
-		assertEquals(Level.OK, Levels.memory(39, 23));
-		assertEquals("a known pause with no heap figure", Level.WARN, Levels.memory(-1, Thresholds.GC_WARN_MS));
-		assertEquals("a heap figure with pauses not known", Level.BAD, Levels.memory(Thresholds.HEAP_BAD_PCT, -1));
-	}
-
-	/** Both halves left out (no heap-after figure, pauses cannot be known): nothing speaks against memory. */
-	@Test
-	public void memoryWithNothingKnownIsOk()
-	{
-		assertEquals(Level.OK, Levels.memory(-1, -1));
-	}
-
-	/** 0 ms is a MEASURED fact, "no pause": OK for that half, on its own and beside a heap figure. */
-	@Test
-	public void aMeasuredZeroPauseIsOk()
-	{
-		assertEquals(Level.OK, Levels.memory(-1, 0));
-		assertEquals(Level.OK, Levels.memory(Thresholds.HEAP_WARN_PCT - 1, 0));
-		assertEquals("the heap half still counts", Level.WARN, Levels.memory(Thresholds.HEAP_WARN_PCT, 0));
-	}
-
-	/** Whatever the halves, known or not, the memory level is never the hollow ring's. */
-	@Test
-	public void memoryNeverAnswersNoData()
-	{
-		final int[] heaps = {-32768, -5, -1, 0, 1, 50, Thresholds.HEAP_WARN_PCT - 1, Thresholds.HEAP_WARN_PCT,
-			Thresholds.HEAP_BAD_PCT - 1, Thresholds.HEAP_BAD_PCT, 100, 250, Integer.MAX_VALUE};
-		final int[] pauses = {-32768, -5, -1, 0, 1, 50, Thresholds.GC_WARN_MS - 1, Thresholds.GC_WARN_MS,
-			Thresholds.GC_BAD_MS - 1, Thresholds.GC_BAD_MS, 9999, Integer.MAX_VALUE};
-		for (int heap : heaps)
-		{
-			for (int pause : pauses)
-			{
-				assertNotEquals("memory(" + heap + ", " + pause + ")", Level.NO_DATA, Levels.memory(heap, pause));
-			}
-		}
-	}
-
-	/** The CPU lane, on the whole PC's use, at each line and one below it: 84 OK, 85 WARN, 94 WARN, 95 BAD. */
-	@Test
-	public void cpuLines()
-	{
-		assertEquals(Level.OK, Levels.cpu(Thresholds.CPU_WARN_PCT - 1));
-		assertEquals(Level.WARN, Levels.cpu(Thresholds.CPU_WARN_PCT));
-		assertEquals(Level.WARN, Levels.cpu(Thresholds.CPU_BAD_PCT - 1));
-		assertEquals(Level.BAD, Levels.cpu(Thresholds.CPU_BAD_PCT));
-		assertEquals(Level.OK, Levels.cpu(84));
-		assertEquals(Level.WARN, Levels.cpu(85));
-		assertEquals(Level.WARN, Levels.cpu(94));
-		assertEquals(Level.BAD, Levels.cpu(95));
-		assertEquals(Level.BAD, Levels.cpu(100));
-		assertEquals(Level.OK, Levels.cpu(0));
-		assertEquals("no data", Level.NO_DATA, Levels.cpu(-1));
 	}
 }

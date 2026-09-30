@@ -6,53 +6,46 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * The five cells of the panel of picture 18 (contract 3.8, 5.2): the picture's quiet cells and its selected lag, with
- * the WORST tick in the Tick cell and the culprit marked at the verdict's level; no culprit for a "Not sure" event;
- * a dash with the reason in the tip; numbers held to 9,999; the CPU cell with one half, both and neither, and while
- * not logged in (the snapshot's world 0: "CPU: Not logged in", never "No CPU data on this PC"); every tip of 5.2's
- * two tables; and the five in {@link Lane} order.
+ * The three cells of the panel of picture 18 (contract 3.8, 5.2): the picture's quiet cells and its selected lag,
+ * with the WORST tick in the Tick cell and the culprit marked at the verdict's level; no culprit for a "Not sure"
+ * event; a dash with the reason in the tip; numbers held to 9,999; every tip of 5.2's two tables; and the three in
+ * {@link Lane} order. The memory and CPU cells are gone (1.0.0, the Hub's rule).
  */
 public class CellsTest
 {
 	/** The plus-minus sign the Server ticks tile's small line starts with, as in "plus-minus 13 ms" (contract 5.2). */
-	private static final String PLUS_MINUS = "\u00b1";
+	private static final String PLUS_MINUS = "±";
 
-	/** The picture's quiet numbers: 50 fps, 600 ms, 41 ms (was 39), 51 %, the game at 42 % of a PC at 24 %. */
+	/** The picture's quiet numbers: 50 fps, 600 ms, 41 ms (was 39). */
 	static PanelSnapshot quietSnapshot()
 	{
 		return snapshot(new Tile[] {
 			new Tile(Lane.FRAME_RATE, Level.OK, "50 fps", "worst 35 ms", NoData.NONE),
 			new Tile(Lane.TICKS, Level.OK, "600 ms", PLUS_MINUS + "13 ms", NoData.NONE),
-			new Tile(Lane.PING, Level.OK, "41 ms", "was 39 ms", NoData.NONE),
-			new Tile(Lane.MEMORY, Level.OK, "51 %", "pause 23 ms", NoData.NONE)}, 24, 42);
+			new Tile(Lane.PING, Level.OK, "41 ms", "was 39 ms", NoData.NONE)});
 	}
 
 	@Test
 	public void nowOfThePicturesQuietSnapshot()
 	{
 		final Cell[] c = Cells.now(quietSnapshot());
+		assertEquals(3, c.length);
 		assertCell(c[0], Lane.FRAME_RATE, "FPS", "50", "fps", Level.OK, false);
 		assertCell(c[1], Lane.TICKS, "Tick", "600", "ms", Level.OK, false);
 		assertCell(c[2], Lane.PING, "Ping", "41", "ms", Level.OK, false);
-		assertCell(c[3], Lane.MEMORY, "Mem", "51%", "used", Level.OK, false);
-		assertCell(c[4], Lane.CPU, "CPU", "42%", "PC 24", Level.OK, false);
 	}
 
-	/** A cell takes its tile's level; a busy PC colours the CPU cell by the whole PC, never by the game's share. */
+	/** A cell takes its tile's level. */
 	@Test
 	public void nowTakesTheTilesLevels()
 	{
 		final Cell[] c = Cells.now(snapshot(new Tile[] {
 			new Tile(Lane.FRAME_RATE, Level.BAD, "12 fps", "worst 480 ms", NoData.NONE),
 			new Tile(Lane.TICKS, Level.WARN, "672 ms", PLUS_MINUS + "72 ms", NoData.NONE),
-			new Tile(Lane.PING, Level.BAD, "310 ms", "was 41 ms", NoData.NONE),
-			new Tile(Lane.MEMORY, Level.WARN, "88 %", "pause 140 ms", NoData.NONE)}, 96, 10));
+			new Tile(Lane.PING, Level.BAD, "310 ms", "was 41 ms", NoData.NONE)}));
 		assertEquals(Level.BAD, c[0].level);
 		assertEquals(Level.WARN, c[1].level);
 		assertEquals(Level.BAD, c[2].level);
-		assertEquals(Level.WARN, c[3].level);
-		assertEquals("PC 96", Level.BAD, c[4].level);
-		assertEquals(Level.OK, Cells.now(snapshot(quietSnapshot().tiles, 20, 100))[4].level);
 		for (Cell cell : c)
 		{
 			assertFalse("no cell of now is a culprit", cell.culprit);
@@ -64,11 +57,10 @@ public class CellsTest
 	public void ofThePicturesEvent()
 	{
 		final Cell[] c = Cells.of(EventViewTest.picturesEvent().withVerdict(verdict(Cause.SLOW_WORLD)));
+		assertEquals(3, c.length);
 		assertCell(c[0], Lane.FRAME_RATE, "FPS", "50", "fps", Level.OK, false);
 		assertCell(c[1], Lane.TICKS, "Tick", "1,240", "ms", Level.BAD, true);
 		assertCell(c[2], Lane.PING, "Ping", "41", "ms", Level.OK, false);
-		assertCell(c[3], Lane.MEMORY, "Mem", "79%", "used", Level.OK, false);
-		assertCell(c[4], Lane.CPU, "CPU", "95%", "PC 37", Level.OK, false);
 		assertEquals("one culprit", 1, culprits(c));
 	}
 
@@ -80,22 +72,18 @@ public class CellsTest
 	public void theCulpritTakesTheVerdictsLevel()
 	{
 		final LagEvent e = EventViewTest.picturesEvent();
-		final Cell[] memory = Cells.of(e.withVerdict(verdict(Cause.GC_PAUSE)));
-		assertCell(memory[3], Lane.MEMORY, "Mem", "79%", "used", Level.BAD, true);
-		assertEquals("the memory tile alone says OK", Level.OK, EventView.tiles(e)[3].level);
-		assertEquals(1, culprits(memory));
-		assertEquals("the Tick cell keeps its own level", Level.BAD, memory[1].level);
-		assertFalse(memory[1].culprit);
-
 		final Cell[] line = Cells.of(e.withVerdict(verdict(Cause.UPLOAD_LOSS)));
 		assertCell(line[2], Lane.PING, "Ping", "41", "ms", Level.BAD, true);
 		assertEquals(1, culprits(line));
+		assertEquals("the Tick cell keeps its own level", Level.BAD, line[1].level);
+		assertFalse(line[1].culprit);
 
 		final Cell[] frames = Cells.of(e.withVerdict(verdict(Cause.CLIENT_BUSY)));
 		assertCell(frames[0], Lane.FRAME_RATE, "FPS", "50", "fps", Level.BAD, true);
+		assertEquals("the frame rate tile alone says OK", Level.OK, EventView.tiles(e)[0].level);
 		assertEquals(1, culprits(frames));
 
-		final LagEvent noPing = event(50, 34, 952, 1240, 640, -1, 41, 607, 768, 22, 37, 95);
+		final LagEvent noPing = event(50, 34, 952, 1240, 640, -1, 41);
 		final Cell[] blind = Cells.of(noPing.withVerdict(verdict(Cause.UPLOAD_LOSS)));
 		assertCell(blind[2], Lane.PING, "Ping", "-", "", Level.BAD, true);
 	}
@@ -118,18 +106,18 @@ public class CellsTest
 	{
 		final Tile[] quiet = quietSnapshot().tiles;
 		final Cell stale = Cells.now(snapshot(new Tile[] {quiet[0], quiet[1],
-			new Tile(Lane.PING, Level.NO_DATA, "-", NoData.STALE.reason(), NoData.STALE), quiet[3]}, 24, 42))[2];
+			new Tile(Lane.PING, Level.NO_DATA, "-", NoData.STALE.reason(), NoData.STALE)}))[2];
 		assertCell(stale, Lane.PING, "Ping", "-", "", Level.NO_DATA, false);
 		assertEquals("Ping: Nothing sent", stale.tip);
 
-		// Not logged in, as the snapshot builder writes it: world 0, every tile "Not logged in", both CPU numbers -1.
+		// Not logged in, as the snapshot builder writes it: world 0 and every tile "Not logged in".
 		final Tile[] out = new Tile[Lane.TILES];
 		for (int i = 0; i < out.length; i++)
 		{
 			out[i] = new Tile(Lane.values()[i], Level.NO_DATA, "-", NoData.NOT_LOGGED_IN.reason(),
 				NoData.NOT_LOGGED_IN);
 		}
-		final Cell[] loggedOut = Cells.now(snapshot(0, out, -1, -1));
+		final Cell[] loggedOut = Cells.now(snapshot(0, out));
 		for (Cell c : loggedOut)
 		{
 			assertEquals(c.name, "-", c.value);
@@ -139,15 +127,13 @@ public class CellsTest
 		assertEquals("Frame rate: Not logged in", loggedOut[0].tip);
 		assertEquals("Ticks: Not logged in", loggedOut[1].tip);
 		assertEquals("Ping: Not logged in", loggedOut[2].tip);
-		assertEquals("Memory: Not logged in", loggedOut[3].tip);
-		assertEquals("the CPU says why, as the other four do", "CPU: Not logged in", loggedOut[4].tip);
 
 		final Cell forced = Cells.now(snapshot(new Tile[] {quiet[0], quiet[1],
-			new Tile(Lane.PING, Level.BAD, "-", "Could not read it", NoData.ERROR), quiet[3]}, 24, 42))[2];
+			new Tile(Lane.PING, Level.BAD, "-", "Could not read it", NoData.ERROR)}))[2];
 		assertEquals("a dash is always the hollow ring", Level.NO_DATA, forced.level);
 		assertEquals("Ping: Could not read it", forced.tip);
 
-		final Cell[] event = Cells.of(event(-1, -1, 952, 1240, 640, 41, 41, 607, 768, 22, 37, 95));
+		final Cell[] event = Cells.of(event(-1, -1, 952, 1240, 640, 41, 41));
 		assertCell(event[0], Lane.FRAME_RATE, "FPS", "-", "", Level.NO_DATA, false);
 		assertEquals("an event's dash has no reason to give", "Frame rate: -", event[0].tip);
 	}
@@ -155,15 +141,14 @@ public class CellsTest
 	@Test
 	public void numbersAreHeldToNineThousandNineHundredNinetyNine()
 	{
-		final Cell tick = Cells.of(event(50, 34, 952, 12400, 11800, 41, 41, 607, 768, 22, 37, 95))[1];
+		final Cell tick = Cells.of(event(50, 34, 952, 12400, 11800, 41, 41))[1];
 		assertEquals("9,999", tick.value);
 		assertEquals("the tip keeps the true number", "Ticks: worst 12,400 ms, mean 952 ms", tick.tip);
 
-		final Tile[] quiet = quietSnapshot().tiles;
 		final Cell[] big = Cells.now(snapshot(new Tile[] {
 			new Tile(Lane.FRAME_RATE, Level.OK, "12000 fps", "worst 35 ms", NoData.NONE),
 			new Tile(Lane.TICKS, Level.BAD, "12,400 ms", "worst 12,400", NoData.NONE),
-			new Tile(Lane.PING, Level.BAD, "9,999 ms", "was 39 ms", NoData.NONE), quiet[3]}, 24, 42));
+			new Tile(Lane.PING, Level.BAD, "9,999 ms", "was 39 ms", NoData.NONE)}));
 		assertEquals("9,999", big[0].value);
 		assertEquals("9,999", big[1].value);
 		assertEquals("9,999", big[2].value);
@@ -172,64 +157,10 @@ public class CellsTest
 		final Cell[] small = Cells.now(snapshot(new Tile[] {
 			new Tile(Lane.FRAME_RATE, Level.BAD, "0 fps", "worst 1,000 ms", NoData.NONE),
 			new Tile(Lane.TICKS, Level.OK, "1,000 ms", "worst 1,000", NoData.NONE),
-			new Tile(Lane.PING, Level.OK, "999 ms", "", NoData.NONE),
-			new Tile(Lane.MEMORY, Level.OK, "100 %", "pause 0 ms", NoData.NONE)}, 100, 100));
+			new Tile(Lane.PING, Level.OK, "999 ms", "", NoData.NONE)}));
 		assertEquals("0", small[0].value);
 		assertEquals("the commas are taken out and put back", "1,000", small[1].value);
 		assertEquals("999", small[2].value);
-		assertEquals("100%", small[3].value);
-		assertEquals("100%", small[4].value);
-		assertEquals("PC 100", small[4].unit);
-	}
-
-	/** The CPU cell: the game's share big, the whole PC under it; a half at -1 is left out, value and tip alike. */
-	@Test
-	public void theCpuCellWithOneHalf()
-	{
-		final Tile[] quiet = quietSnapshot().tiles;
-		final Cell pcOnly = Cells.now(snapshot(quiet, 24, -1))[4];
-		assertCell(pcOnly, Lane.CPU, "CPU", "-", "PC 24", Level.OK, false);
-		assertEquals("CPU: PC 24 %", pcOnly.tip);
-
-		final Cell gameOnly = Cells.now(snapshot(quiet, -1, 42))[4];
-		assertCell(gameOnly, Lane.CPU, "CPU", "42%", "", Level.NO_DATA, false);
-		assertEquals("CPU: game 42 %", gameOnly.tip);
-
-		final Cell neither = Cells.now(snapshot(quiet, -1, -1))[4];
-		assertCell(neither, Lane.CPU, "CPU", "-", "", Level.NO_DATA, false);
-		assertEquals("CPU: No CPU data on this PC", neither.tip);
-
-		final Cell eventPcOnly = Cells.of(event(50, 34, 952, 1240, 640, 41, 41, 607, 768, 22, 37, -1))[4];
-		assertCell(eventPcOnly, Lane.CPU, "CPU", "-", "PC 37", Level.OK, false);
-		final Cell eventNeither = Cells.of(event(50, 34, 952, 1240, 640, 41, 41, 607, 768, 22, -1, -1))[4];
-		assertCell(eventNeither, Lane.CPU, "CPU", "-", "", Level.NO_DATA, false);
-		assertEquals("CPU: No CPU data on this PC", eventNeither.tip);
-		assertEquals("a busy PC is BAD", Level.BAD,
-			Cells.of(event(50, 34, 952, 1240, 640, 41, 41, 607, 768, 22, 96, 10))[4].level);
-	}
-
-	/**
-	 * Not logged in (the snapshot's world is 0, contract 5.2): the CPU cell is a dash like the four tile cells, with
-	 * "CPU: Not logged in", whatever its two numbers hold - a -1 alone cannot say why. "No CPU data on this PC" is
-	 * said only while logged in, and the same numbers while logged in give their values.
-	 */
-	@Test
-	public void theCpuCellWhileNotLoggedIn()
-	{
-		final Tile[] quiet = quietSnapshot().tiles;
-		for (int[] cpu : new int[][] {{-1, -1}, {24, 42}, {24, -1}, {-1, 42}})
-		{
-			final Cell c = Cells.now(snapshot(0, quiet, cpu[0], cpu[1]))[4];
-			assertCell(c, Lane.CPU, "CPU", "-", "", Level.NO_DATA, false);
-			assertEquals("PC " + cpu[0] + ", game " + cpu[1], "CPU: Not logged in", c.tip);
-		}
-
-		final Cell loggedIn = Cells.now(snapshot(416, quiet, 24, 42))[4];
-		assertCell(loggedIn, Lane.CPU, "CPU", "42%", "PC 24", Level.OK, false);
-		assertEquals("CPU: game 42 %, PC 24 %", loggedIn.tip);
-		final Cell noCpuData = Cells.now(snapshot(416, quiet, -1, -1))[4];
-		assertCell(noCpuData, Lane.CPU, "CPU", "-", "", Level.NO_DATA, false);
-		assertEquals("logged in with no CPU data", "CPU: No CPU data on this PC", noCpuData.tip);
 	}
 
 	/** Each tip of 5.2's two tables, and the parts left out when there is nothing to say. */
@@ -240,54 +171,47 @@ public class CellsTest
 		assertEquals("Frame rate: 50 fps, worst 35 ms", now[0].tip);
 		assertEquals("Ticks: 600 ms, " + PLUS_MINUS + "13 ms", now[1].tip);
 		assertEquals("Ping: 41 ms, was 39 ms", now[2].tip);
-		assertEquals("Memory: 51 %, pause 23 ms", now[3].tip);
-		assertEquals("CPU: game 42 %, PC 24 %", now[4].tip);
 
 		final Cell[] of = Cells.of(EventViewTest.picturesEvent().withVerdict(verdict(Cause.SLOW_WORLD)));
 		assertEquals("Frame rate: 50 fps, worst 34 ms", of[0].tip);
 		assertEquals("Ticks: worst 1,240 ms, mean 952 ms", of[1].tip);
 		assertEquals("Ping: 41 ms, was 41 ms", of[2].tip);
-		assertEquals("Memory: 79 %, pause 22 ms", of[3].tip);
-		assertEquals("CPU: game 95 %, PC 37 %", of[4].tip);
 
 		final Tile[] quiet = quietSnapshot().tiles;
 		final Cell noUsual = Cells.now(snapshot(new Tile[] {quiet[0], quiet[1],
-			new Tile(Lane.PING, Level.OK, "41 ms", "", NoData.NONE), quiet[3]}, 24, 42))[2];
+			new Tile(Lane.PING, Level.OK, "41 ms", "", NoData.NONE)}))[2];
 		assertEquals("no small line: no comma", "Ping: 41 ms", noUsual.tip);
 
-		assertEquals("Ticks: worst 1,240 ms",
-			Cells.of(event(50, 34, -1, 1240, 640, 41, 41, 607, 768, 22, 37, 95))[1].tip);
-		final Cell meanOnly = Cells.of(event(50, 34, 952, -1, -1, 41, 41, 607, 768, 22, 37, 95))[1];
+		assertEquals("Ticks: worst 1,240 ms", Cells.of(event(50, 34, -1, 1240, 640, 41, 41))[1].tip);
+		final Cell meanOnly = Cells.of(event(50, 34, 952, -1, -1, 41, 41))[1];
 		assertEquals("Ticks: mean 952 ms", meanOnly.tip);
 		assertEquals("no worst tick: a dash", "-", meanOnly.value);
 		assertEquals("", meanOnly.unit);
 		assertEquals(Level.NO_DATA, meanOnly.level);
-		assertEquals("Ticks: -", Cells.of(event(50, 34, -1, -1, -1, 41, 41, 607, 768, 22, 37, 95))[1].tip);
-		assertEquals("Memory: 79 %, pause n/a",
-			Cells.of(event(50, 34, 952, 1240, 640, 41, 41, 607, 768, -1, 37, 95))[3].tip);
+		assertEquals("Ticks: -", Cells.of(event(50, 34, -1, -1, -1, 41, 41))[1].tip);
 	}
 
 	/** An event's Tick cell prints the worst gap, at the level of its worst CORRECTED deviation (C5). */
 	@Test
 	public void theEventsTickCellIsTheWorstGapAtItsCorrectedLevel()
 	{
-		final Cell paced = Cells.of(event(50, 34, 610, 640, 20, 41, 41, 607, 768, 22, 37, 95))[1];
+		final Cell paced = Cells.of(event(50, 34, 610, 640, 20, 41, 41))[1];
 		assertEquals("640", paced.value);
 		assertEquals("20 ms after the frame time is taken off", Level.OK, paced.level);
 		// TICK_WARN_MS corrected (200 since the first live look) is WARN; 80 is OK now.
 		assertEquals(Level.WARN, Cells.of(event(50, 34, 610, 600 + Thresholds.TICK_WARN_MS + 22,
-			Thresholds.TICK_WARN_MS, 41, 41, 607, 768, 22, 37, 95))[1].level);
-		assertEquals(Level.OK, Cells.of(event(50, 34, 610, 700, 80, 41, 41, 607, 768, 22, 37, 95))[1].level);
+			Thresholds.TICK_WARN_MS, 41, 41))[1].level);
+		assertEquals(Level.OK, Cells.of(event(50, 34, 610, 700, 80, 41, 41))[1].level);
 	}
 
 	@Test
-	public void fiveCellsInLaneOrder()
+	public void threeCellsInLaneOrder()
 	{
-		final String[] names = {"FPS", "Tick", "Ping", "Mem", "CPU"};
+		final String[] names = {"FPS", "Tick", "Ping"};
 		for (Cell[] cells : new Cell[][] {Cells.now(quietSnapshot()), Cells.of(EventViewTest.picturesEvent()),
-			Cells.now(snapshot(new Tile[0], -1, -1))})
+			Cells.now(snapshot(new Tile[0]))})
 		{
-			assertEquals(5, cells.length);
+			assertEquals(3, cells.length);
 			assertEquals(Lane.values().length, cells.length);
 			for (int i = 0; i < cells.length; i++)
 			{
@@ -297,18 +221,17 @@ public class CellsTest
 		}
 	}
 
-	/** A snapshot with no tiles (only a test builds one) gives four dashes and never throws. */
+	/** A snapshot with no tiles (only a test builds one) gives three dashes and never throws. */
 	@Test
 	public void missingTilesAreDashes()
 	{
-		final Cell[] c = Cells.now(snapshot(null, 24, 42));
+		final Cell[] c = Cells.now(snapshot(null));
 		for (int i = 0; i < Lane.TILES; i++)
 		{
 			assertEquals("-", c[i].value);
 			assertEquals(Level.NO_DATA, c[i].level);
 			assertEquals(Lane.values()[i].label() + ": -", c[i].tip);
 		}
-		assertEquals("42%", c[4].value);
 	}
 
 	@Test
@@ -319,7 +242,7 @@ public class CellsTest
 		assertEquals("", c.value);
 		assertEquals("", c.unit);
 		assertEquals("", c.tip);
-		assertTrue(new Cell(Lane.CPU, "CPU", "42%", "PC 24", Level.OK, true, "t").culprit);
+		assertTrue(new Cell(Lane.PING, "Ping", "41", "ms", Level.OK, true, "t").culprit);
 	}
 
 	// ---------------------------------------------------------------- helpers
@@ -346,16 +269,16 @@ public class CellsTest
 	}
 
 	/** A logged-in snapshot, on world 416. */
-	private static PanelSnapshot snapshot(Tile[] tiles, int sysCpuPct, int gameBusyPct)
+	private static PanelSnapshot snapshot(Tile[] tiles)
 	{
-		return snapshot(416, tiles, sysCpuPct, gameBusyPct);
+		return snapshot(416, tiles);
 	}
 
 	/** A snapshot on that world; 0 = not logged in (contract 3.8). */
-	private static PanelSnapshot snapshot(int world, Tile[] tiles, int sysCpuPct, int gameBusyPct)
+	private static PanelSnapshot snapshot(int world, Tile[] tiles)
 	{
 		return new PanelSnapshot(0, null, world, null, tiles, 10, 0, 0, new Strip[0], null, null,
-			new int[Group.values().length], 0, 0, sysCpuPct, gameBusyPct, null, "");
+			new int[Group.values().length], 0, 0, null, "");
 	}
 
 	/** An event's verdict of that cause: BAD, as every event rule's is (contract 6.4). */
@@ -366,11 +289,10 @@ public class CellsTest
 	}
 
 	private static LagEvent event(int fps, int worstFrameMs, int meanTickGapMs, int worstTickGapMs,
-		int worstCorrectedTickMs, int rttMs, int rttBeforeMs, int heapUsedMb, int heapMaxMb, int gcPauseMs,
-		int sysCpuPct, int gameBusyPct)
+		int worstCorrectedTickMs, int rttMs, int rttBeforeMs)
 	{
 		return new LagEvent(7, 100, 113, 0, Trigger.TICK_OFF.bit(), Trigger.TICK_OFF, 416, 0, 0, 0, fps,
 			worstFrameMs, meanTickGapMs, worstTickGapMs, worstCorrectedTickMs, rttMs, rttMs, rttBeforeMs, 900, 0,
-			gcPauseMs, heapUsedMb, heapMaxMb, sysCpuPct, gameBusyPct, false, false, null);
+			false, false, null);
 	}
 }

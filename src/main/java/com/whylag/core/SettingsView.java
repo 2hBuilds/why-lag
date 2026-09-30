@@ -6,9 +6,7 @@ package com.whylag.core;
  *
  * <p>{@code vsyncMode} is the active renderer's own key, "OFF", "ON", "ADAPTIVE", or "" when it was not read;
  * {@code antiAliasing} the stored enum name ("" unknown); {@code clientVersion} "" when unknown. Null strings are
- * kept as "", a null renderer as {@link Renderer#UNKNOWN}, and a null memory source as {@link MemorySource#RUNTIME}
- * (the safe side: on RUNTIME wave one never names memory as a cause). A {@code heapMaxMb} of 0 or less means the
- * limit is UNKNOWN, and every reader treats it as no data (contract 3.7): no memory percentage is taken of it.
+ * kept as "" and a null renderer as {@link Renderer#UNKNOWN}.
  *
  * <p><b>Which focus a reader passes</b> (contract 3.7). The four cap reads take the window's focus. A reader passes
  * the FOCUSED flag of the one second it judges, never a constant; only the report, which reads no second, prints
@@ -50,21 +48,18 @@ public final class SettingsView
 
 	public final Renderer renderer;
 	public final boolean fpsControlActive, limitFps, limitFpsUnfocused, unlockFps;
-	public final int maxFps, maxFpsUnfocused, fpsTarget, drawDistance, expandedMapLoading, refreshHz, heapMaxMb;
+	public final int maxFps, maxFpsUnfocused, fpsTarget, drawDistance, expandedMapLoading, refreshHz;
 	/** "OFF" | "ON" | "ADAPTIVE" | "" (the renderer's own key, read only while it is active). */
 	public final String vsyncMode;
 	/** The stored enum name, "" = unknown. */
 	public final String antiAliasing;
-	/** Never null: a null given here is kept as {@link MemorySource#RUNTIME}. */
-	public final MemorySource memorySource;
 	public final Os os;
 	/** "" = unknown. */
 	public final String clientVersion;
 
 	public SettingsView(Renderer renderer, boolean fpsControlActive, boolean limitFps, int maxFps,
 		boolean limitFpsUnfocused, int maxFpsUnfocused, boolean unlockFps, String vsyncMode, int fpsTarget,
-		int drawDistance, String antiAliasing, int expandedMapLoading, int refreshHz, int heapMaxMb,
-		MemorySource memorySource, Os os, String clientVersion)
+		int drawDistance, String antiAliasing, int expandedMapLoading, int refreshHz, Os os, String clientVersion)
 	{
 		this.renderer = renderer == null ? Renderer.UNKNOWN : renderer;
 		this.fpsControlActive = fpsControlActive;
@@ -79,21 +74,17 @@ public final class SettingsView
 		this.antiAliasing = antiAliasing == null ? "" : antiAliasing;
 		this.expandedMapLoading = expandedMapLoading;
 		this.refreshHz = refreshHz;
-		this.heapMaxMb = heapMaxMb;
-		this.memorySource = memorySource == null ? MemorySource.RUNTIME : memorySource;
 		this.os = os;
 		this.clientVersion = clientVersion == null ? "" : clientVersion;
 	}
 
 	/**
 	 * Settings not read yet: renderer {@link Renderer#UNKNOWN}, no cap known, refresh 0, every other number 0 and
-	 * every text "". There is NO two-argument form: the caller says which memory source is in use, so a Runtime-only
-	 * probe is never reported as {@link MemorySource#MANAGEMENT}. A null source is kept as RUNTIME.
+	 * every text "".
 	 */
-	public static SettingsView unknown(int heapMaxMb, Os os, MemorySource memorySource)
+	public static SettingsView unknown(Os os)
 	{
-		return new SettingsView(Renderer.UNKNOWN, false, false, 0, false, 0, false, "", 0, 0, "", 0, 0, heapMaxMb,
-			memorySource, os, "");
+		return new SettingsView(Renderer.UNKNOWN, false, false, 0, false, 0, false, "", 0, 0, "", 0, 0, os, "");
 	}
 
 	/** The cap in force; 0 = no cap known. */

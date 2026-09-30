@@ -90,10 +90,6 @@ public class StepCostTest
 		{
 			t.tickLate(k, 400, true);
 		}
-		for (int k = 170; k < SECONDS - 10; k += 360)
-		{
-			t.gcPause(k, 200, 150, 350);
-		}
 		return t;
 	}
 

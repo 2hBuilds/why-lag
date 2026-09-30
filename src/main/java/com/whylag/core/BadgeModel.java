@@ -26,7 +26,7 @@ package com.whylag.core;
  * else the hollow ring: NO_DATA, no icon, the card's answer</td></tr>
  * <tr><td>5</td><td>the card is all clear (V2), or still holds a past lag ({@code eventId >= 0})</td><td>"When
  * smooth: Hide": HIDDEN; else smooth: the green circle, {@link Answer#SMOOTH}</td></tr>
- * <tr><td>6</td><td>anything else: a condition (F1, N1, F2, W1c, G2)</td><td>slow: the card's answer at the card's
+ * <tr><td>6</td><td>anything else: a condition (F1, N1, F2, W1c)</td><td>slow: the card's answer at the card's
  * level, not dimmed, drawn whatever "When smooth" says</td></tr>
  * </table>
  * A hidden view is always {@link BadgeView#HIDDEN} itself, whatever the style; every visible view carries the style
@@ -41,10 +41,10 @@ package com.whylag.core;
  *
  * <p><b>An event's numbers</b>, by the answer's icon, each through {@link Fmt#thousands}: WORLD "Ticks 1,240 ms,
  * ping 41 ms" ({@code worstTickGapMs}, {@code rttMs}); LINE "Ping 310 ms, ticks 1,240 ms" ({@code rttMaxMs},
- * {@code worstTickGapMs}); PC "Worst frame 480 ms, 50 fps" ({@code worstFrameMs}, {@code fps}); MEMORY "Pause 340
- * ms, memory 742 MB" ({@code gcPauseMs}, {@code heapUsedMb}); UNKNOWN "Ticks 1,240 ms, worst frame 170 ms"
- * ({@code worstTickGapMs}, {@code worstFrameMs}). The tick is the WORST gap, never the mean. A part with no number is
- * left out and what remains starts with a capital ("Ping 41 ms"); with both parts out the numbers are "".
+ * {@code worstTickGapMs}); PC "Worst frame 480 ms, 50 fps" ({@code worstFrameMs}, {@code fps}); UNKNOWN "Ticks
+ * 1,240 ms, worst frame 170 ms" ({@code worstTickGapMs}, {@code worstFrameMs}). The tick is the WORST gap, never the
+ * mean. A part with no number is left out and what remains starts with a capital ("Ping 41 ms"); with both parts
+ * out the numbers are "".
  *
  * <p><b>The chat line</b> (contract P2.6). The last closed event is NEW when its id is not the one seen last (none
  * at first); a new one is marked as seen at once, whatever follows. It gets a line only when {@code chat} is on and
@@ -222,8 +222,6 @@ public final class BadgeModel
 				return join(part("Ping ", e.rttMaxMs, " ms"), part("ticks ", e.worstTickGapMs, " ms"));
 			case PC:
 				return join(part("Worst frame ", e.worstFrameMs, " ms"), part("", e.fps, " fps"));
-			case MEMORY:
-				return join(part("Pause ", e.gcPauseMs, " ms"), part("memory ", e.heapUsedMb, " MB"));
 			case UNKNOWN:
 				return join(part("Ticks ", e.worstTickGapMs, " ms"), part("worst frame ", e.worstFrameMs, " ms"));
 			default:

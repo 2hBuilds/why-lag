@@ -1,8 +1,8 @@
 package com.whylag.core;
 
 /**
- * ONE event as the four tiles and the five lane values (contract 3.8, 5.2, 5.3): what the panel draws in place of
- * "now" while a list row is selected. Pure and static; it reads the event's own numbers only.
+ * ONE event as the three tiles and the three lane values (contract 3.8, 5.2, 5.3): what the panel draws in place
+ * of "now" while a list row is selected. Pure and static; it reads the event's own numbers only.
  *
  * <table>
  * <caption>The tiles of a selected event</caption>
@@ -13,39 +13,29 @@ package com.whylag.core;
  * <td>{@code Levels.tick(worstCorrectedTickMs)}</td></tr>
  * <tr><td>Ping</td><td>"41 ms" = rttMs</td><td>"was 41 ms" = rttBeforeMs; -1: ""</td>
  * <td>{@code Levels.ping(rttMs)}</td></tr>
- * <tr><td>Memory</td><td>"79 %" = heapUsedMb of heapMaxMb, rounded down</td>
- * <td>"pause 22 ms" = gcPauseMs; 0: "pause 0 ms" (measured, none); -1: "pause n/a" (not measured)</td>
- * <td>{@code Levels.memory(-1, gcPauseMs)}: by the pause when it is known, else OK; never NO_DATA</td></tr>
  * </table>
  *
- * <p>A value field at -1 (for memory: a used heap under 0 or a limit of 0 or less) gives the value "-", the level
- * NO_DATA and the sub "" (its {@code noData} is {@link NoData#NONE}: an event has no reason to print). A sub field
- * at -1 gives "" (memory's "pause n/a" is the one exception). So a selected event with a real heap figure never
- * draws the hollow ring, whether a pause was measured or not.
+ * <p>A value field at -1 gives the value "-", the level NO_DATA and the sub "" (its {@code noData} is
+ * {@link NoData#NONE}: an event has no reason to print). A sub field at -1 gives "".
  *
- * <p><b>The lanes.</b> The first four lane values and levels are the tiles' values and levels, so the tiles and the
- * lanes always show the same numbers. The fifth lane, {@link Lane#CPU}, has no tile: its value is the PC half,
- * "PC 37 %" ({@code sysCpuPct}; "-" when it is -1) at the level {@link Levels#cpu}, and {@link #cpuGameValue} gives
- * the Game half, "Game 95 %" ({@code gameBusyPct}; "" when it is -1).
+ * <p><b>The lanes.</b> The lane values and levels are the tiles' values and levels, so the tiles and the lanes
+ * always show the same numbers.
  */
 public final class EventView
 {
-	private static final int PERCENT = 100;
 	private static final int LANES = Lane.values().length;
-	private static final String PC = "PC";
-	private static final String GAME = "Game";
 
 	private EventView()
 	{
 	}
 
-	/** Four tiles ({@link Lane#TILES}), in {@link Lane} order. */
+	/** Three tiles ({@link Lane#TILES}), in {@link Lane} order. */
 	public static Tile[] tiles(LagEvent e)
 	{
-		return new Tile[] {frameRate(e), ticks(e), ping(e), memory(e)};
+		return new Tile[] {frameRate(e), ticks(e), ping(e)};
 	}
 
-	/** Five values, in {@link Lane} order: "50 fps", "952 ms", "41 ms", "79 %", "PC 37 %"; "-" = no data. */
+	/** Three values, in {@link Lane} order: "50 fps", "952 ms", "41 ms"; "-" = no data. */
 	public static String[] laneValues(LagEvent e)
 	{
 		final Tile[] tiles = tiles(e);
@@ -54,11 +44,10 @@ public final class EventView
 		{
 			out[i] = tiles[i].value;
 		}
-		out[Lane.CPU.ordinal()] = e.sysCpuPct < 0 ? "-" : Fmt.pct(PC, e.sysCpuPct);
 		return out;
 	}
 
-	/** Five levels, in {@link Lane} order: the tiles' levels, then {@code Levels.cpu(sysCpuPct)}. */
+	/** Three levels, in {@link Lane} order: the tiles' levels. */
 	public static Level[] laneLevels(LagEvent e)
 	{
 		final Tile[] tiles = tiles(e);
@@ -67,14 +56,7 @@ public final class EventView
 		{
 			out[i] = tiles[i].level;
 		}
-		out[Lane.CPU.ordinal()] = Levels.cpu(e.sysCpuPct);
 		return out;
-	}
-
-	/** The CPU lane's Game half: "Game 95 %" from {@code gameBusyPct}; "" when it is -1. */
-	public static String cpuGameValue(LagEvent e)
-	{
-		return e.gameBusyPct < 0 ? "" : Fmt.pct(GAME, e.gameBusyPct);
 	}
 
 	private static Tile frameRate(LagEvent e)
@@ -107,18 +89,6 @@ public final class EventView
 		}
 		final String sub = e.rttBeforeMs < 0 ? "" : "was " + Fmt.thousands(e.rttBeforeMs) + " ms";
 		return new Tile(Lane.PING, Levels.ping(e.rttMs), Fmt.thousands(e.rttMs) + " ms", sub, NoData.NONE);
-	}
-
-	/** gcPauseMs 0 is "pause 0 ms" (measured, none), -1 "pause n/a" (cannot be known); the level is never NO_DATA. */
-	private static Tile memory(LagEvent e)
-	{
-		if (e.heapUsedMb < 0 || e.heapMaxMb <= 0)
-		{
-			return dash(Lane.MEMORY);
-		}
-		final long pct = (long) e.heapUsedMb * PERCENT / e.heapMaxMb;
-		final String sub = e.gcPauseMs < 0 ? "pause n/a" : "pause " + Fmt.thousands(e.gcPauseMs) + " ms";
-		return new Tile(Lane.MEMORY, Levels.memory(-1, e.gcPauseMs), pct + " %", sub, NoData.NONE);
 	}
 
 	private static Tile dash(Lane lane)

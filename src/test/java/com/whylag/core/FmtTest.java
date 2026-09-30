@@ -96,31 +96,6 @@ public class FmtTest
 		assertEquals("1,240 lags", Fmt.lags(1240));
 	}
 
-	/** Word, space, number, space, "%": the two halves of the CPU lane's value. */
-	@Test
-	public void pct()
-	{
-		assertEquals("PC 37 %", Fmt.pct("PC", 37));
-		assertEquals("Game 100 %", Fmt.pct("Game", 100));
-		assertEquals("Game 95 %", Fmt.pct("Game", 95));
-		assertEquals("PC 0 %", Fmt.pct("PC", 0));
-	}
-
-	/** Per mille to per cent, rounded down and held at 100; any negative is -1, "no data". */
-	@Test
-	public void busyPct()
-	{
-		assertEquals(-1, Fmt.busyPct(-1));
-		assertEquals(-1, Fmt.busyPct(-40));
-		assertEquals(0, Fmt.busyPct(0));
-		assertEquals(0, Fmt.busyPct(9));
-		assertEquals(40, Fmt.busyPct(400));
-		assertEquals(95, Fmt.busyPct(955));
-		assertEquals(100, Fmt.busyPct(1000));
-		assertEquals(100, Fmt.busyPct(1400));
-		assertEquals(100, Fmt.busyPct(Integer.MAX_VALUE));
-	}
-
 	@Test
 	public void clamp()
 	{

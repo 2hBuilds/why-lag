@@ -15,8 +15,6 @@ import java.util.Arrays;
  * still loading at the newest second has not ended.</li>
  * <li>FRAME_GAP: the worst frame at or over {@code settings.frameGapLimitMs(f)}, f the second's own FOCUSED
  * flag (3.7).</li>
- * <li>GC_PAUSE: a KNOWN pause of {@link Thresholds#GC_PAUSE_MS} or more touches the second, its first to its last ms
- * both included (3.3). An inferred collection has no length and fires nothing.</li>
  * <li>TICK_OFF: a tick that arrived in the second has {@link TickRing#corrected} at or over
  * {@link Thresholds#TICK_OFF_MS} (the frame interval taken off, C5).</li>
  * <li>NO_TICK: the second's state is in-game, it drew a frame, and at its END the newest tick that arrived before
@@ -62,7 +60,6 @@ import java.util.Arrays;
  * <p>Choice: RESENT's window is the RESENT_WINDOW_S seconds ending with the second, masked too; share rounded down.
  * <p>Choice: the OS of the counters, for RESENT's minimum and the click jump, is the session's (Session.os).
  * <p>Choice: sent either side of the span is what the ring holds then: live, open() lacks seconds not yet written.
- * <p>Choice: an event's heap limit and memory source come from the settings of the advance that takes its numbers.
  * <p>Choice: the rttUsual reset compares with the last second this detector read; its first second resets nothing.
  * <p>Choice: seconds the ring dropped unread count as quiet, masked seconds; a LOADING run is broken there.
  * <p>Choice: an advance past the ring's head reads to the head, and a later advance reads the rest.
@@ -138,7 +135,7 @@ public final class LagDetector implements Detector
 			}
 			// The ring dropped seconds before this detector read them, or while it read one.
 			final long resume = Math.max(ring.tail(), next + 1);
-			lost(s, resume - next, settings, out);
+			lost(s, resume - next, out);
 			next = resume;
 		}
 	}
@@ -212,10 +209,6 @@ public final class LagDetector implements Detector
 			}
 			final long fromMs = s.msOfSec(sec);
 			final long toMs = s.msOfSec(sec + 1);
-			if (s.gcs.longestPauseMs(fromMs, toMs - 1) >= Thresholds.GC_PAUSE_MS)
-			{
-				bits |= Trigger.GC_PAUSE.bit();
-			}
 			bits |= tickTriggers(s.ticks, fromMs, toMs, State.inGame(state) && frames > 0);
 			if (resent > 0 && resentCounts(ring, sec, s.os))
 			{
@@ -251,7 +244,7 @@ public final class LagDetector implements Detector
 		fired[slot(sec)] = sec << TRIGGER_BITS | bits;
 
 		final boolean inEvent = open != null;
-		step(s, sec, bits, settings, out);
+		step(s, sec, bits, out);
 		if (!masked && bits == 0)
 		{
 			if (!inEvent)
@@ -269,7 +262,7 @@ public final class LagDetector implements Detector
 	}
 
 	/** Moves the event by one second whose trigger bits are {@code bits}. */
-	private void step(Session s, long sec, int bits, SettingsView settings, DetectorListener out)
+	private void step(Session s, long sec, int bits, DetectorListener out)
 	{
 		if (open != null)
 		{
@@ -278,7 +271,7 @@ public final class LagDetector implements Detector
 				quietRun++;
 				if (quietRun >= Thresholds.EVENT_QUIET_S)
 				{
-					close(s, settings, out, false);
+					close(s, out, false);
 				}
 				return;
 			}
@@ -287,15 +280,15 @@ public final class LagDetector implements Detector
 				openEnd = sec;
 				openTriggers |= bits;
 				quietRun = 0;
-				open = build(s, settings, true, false);
+				open = build(s, true, false);
 				return;
 			}
-			close(s, settings, out, true);
+			close(s, out, true);
 			waiting = true;
 			waitQuiet = 0;
 			if ((bits & Trigger.DISCONNECT.bit()) != 0)
 			{
-				begin(s, sec, bits, Trigger.DISCONNECT, settings, out);
+				begin(s, sec, bits, Trigger.DISCONNECT, out);
 			}
 			return;
 		}
@@ -314,7 +307,7 @@ public final class LagDetector implements Detector
 				waitQuiet = 0;
 				if ((bits & Trigger.DISCONNECT.bit()) != 0)
 				{
-					begin(s, sec, bits, Trigger.DISCONNECT, settings, out);
+					begin(s, sec, bits, Trigger.DISCONNECT, out);
 				}
 			}
 			return;
@@ -322,12 +315,12 @@ public final class LagDetector implements Detector
 		final int opening = bits & OPENING;
 		if (opening != 0)
 		{
-			begin(s, sec, bits, TRIGGERS[Integer.numberOfTrailingZeros(opening)], settings, out);
+			begin(s, sec, bits, TRIGGERS[Integer.numberOfTrailingZeros(opening)], out);
 		}
 	}
 
 	/** Opens an event in {@code sec}, numbered by the next id, and tells {@code out}. */
-	private void begin(Session s, long sec, int bits, Trigger first, SettingsView settings, DetectorListener out)
+	private void begin(Session s, long sec, int bits, Trigger first, DetectorListener out)
 	{
 		openId = nextId++;
 		openStart = sec;
@@ -338,21 +331,21 @@ public final class LagDetector implements Detector
 		quietRun = 0;
 		waiting = false;
 		waitQuiet = 0;
-		final LagEvent e = build(s, settings, true, false);
+		final LagEvent e = build(s, true, false);
 		open = e;
 		out.opened(e);
 	}
 
 	/** Closes the open event with its numbers taken now, and tells {@code out}. */
-	private void close(Session s, SettingsView settings, DetectorListener out, boolean becameCondition)
+	private void close(Session s, DetectorListener out, boolean becameCondition)
 	{
-		final LagEvent e = build(s, settings, false, becameCondition);
+		final LagEvent e = build(s, false, becameCondition);
 		open = null;
 		out.closed(e);
 	}
 
 	/** Seconds the ring dropped unread: counted as quiet, masked seconds (see the class notes). */
-	private void lost(Session s, long count, SettingsView settings, DetectorListener out)
+	private void lost(Session s, long count, DetectorListener out)
 	{
 		inLoadRun = false;
 		loadRunMs = 0;
@@ -361,7 +354,7 @@ public final class LagDetector implements Detector
 			quietRun = (int) Math.min(Integer.MAX_VALUE, quietRun + count);
 			if (quietRun >= Thresholds.EVENT_QUIET_S)
 			{
-				close(s, settings, out, false);
+				close(s, out, false);
 			}
 		}
 		else if (waiting)
@@ -376,9 +369,9 @@ public final class LagDetector implements Detector
 
 	/**
 	 * The open event with every number of contract 3.4 taken over {@code openStart .. openEnd} from the rings as they
-	 * stand. Every -1 is "no data"; {@code gcPauseMs} is 0 when measured and none, -1 when it cannot be known.
+	 * stand. Every -1 is "no data".
 	 */
-	private LagEvent build(Session s, SettingsView settings, boolean isOpen, boolean becameCondition)
+	private LagEvent build(Session s, boolean isOpen, boolean becameCondition)
 	{
 		final SecondRing ring = s.seconds;
 		final long start = openStart;
@@ -410,18 +403,12 @@ public final class LagDetector implements Detector
 		int rttsHeld = 0;
 		int worstFrameMs = -1;
 		int rttMaxMs = -1;
-		int heapUsedMb = -1;
-		int sysCpuPct = -1;
-		int gameBusyPct = -1;
 		for (long k = start; k <= end; k++)
 		{
 			final int frames = ring.frames(k);
 			final int worst = ring.worstFrameMs(k);
 			final int rtt = ring.rttMs(k);
 			final int age = ring.rttAgeS(k);
-			final int heap = ring.heapUsedMb(k);
-			final int sys = ring.sysCpuPct(k);
-			final int busy = ring.busyPm(k);
 			if (!ring.valid(k))
 			{
 				continue;
@@ -433,9 +420,6 @@ public final class LagDetector implements Detector
 				rttScratch[rttsHeld++] = rtt;
 				rttMaxMs = Math.max(rttMaxMs, rtt);
 			}
-			heapUsedMb = Math.max(heapUsedMb, heap);
-			sysCpuPct = Math.max(sysCpuPct, sys);
-			gameBusyPct = Math.max(gameBusyPct, Fmt.busyPct(busy));
 		}
 		final int fps = median(frameScratch, framesHeld);
 		final int rttMs = median(rttScratch, rttsHeld);
@@ -487,14 +471,9 @@ public final class LagDetector implements Detector
 			}
 		}
 
-		final int gcPauseMs = settings.memorySource == MemorySource.MANAGEMENT
-			? s.gcs.longestPauseMs(fromMs, toMs - 1) : -1;
-		final int heapMaxMb = settings.heapMaxMb > 0 ? settings.heapMaxMb : -1;
-
 		return new LagEvent(openId, start, end, s.wallMsOf(start), openTriggers, openFirst, world, region, players,
 			npcs, fps, worstFrameMs, meanTickGapMs, worstTickGapMs, worstCorrectedTickMs, rttMs, rttMaxMs,
-			openRttBeforeMs, toInt(sentSum), toInt(resentSum), gcPauseMs, heapUsedMb, heapMaxMb, sysCpuPct,
-			gameBusyPct, isOpen, becameCondition, null);
+			openRttBeforeMs, toInt(sentSum), toInt(resentSum), isOpen, becameCondition, null);
 	}
 
 	/** RTT_SPIKE's test on a fresh RTT against this world's usual (-1 = none) and the click base (6.2, C21). */

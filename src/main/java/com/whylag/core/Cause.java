@@ -2,9 +2,13 @@ package com.whylag.core;
 
 /**
  * Every cause of the build plan, by its id (contract 3.2). {@link #shortName()} is the phrase the X verdict names
- * ("It was memory clean-up or lost packets."). Only the causes of wave one's fifteen rules, plus
+ * ("It was a client stall or lost packets."). Only the causes of wave one's twelve rules, plus
  * {@link #WARMING_UP}, answer {@link #inWaveOne()}: the rest are named so their ids stay fixed, and no wave-one
  * rule gives them.
+ *
+ * <p>Choice (1.0.0, the Hub's rule): the memory causes (G1, G2, G3), the client-waiting cause (S4, which read the
+ * game thread's busy share to tell waiting from working) and the other-program cause (S5, which read the whole PC's
+ * CPU) are gone with the readings they stood on; S3 is the one client-stall cause and judges by the frame gap alone.
  *
  * <p>{@link #WARMING_UP} is the one wave-one cause that no rule gives: it is the cause of each of the three states
  * of the card that are not verdicts (contract 5.1) - "Not logged in", "Still measuring" and "Waiting for the game" -
@@ -16,14 +20,9 @@ package com.whylag.core;
  */
 public enum Cause
 {
-	GC_PAUSE("G1", Group.MEMORY, "memory clean-up"),
-	HEAP_CAP_LOW("G2", Group.MEMORY, "the memory limit"),
-	HEAP_FILLING("G3", Group.MEMORY, "memory filling up"),
 	MAP_LOAD("S1", Group.FRAME_RATE, "map loading"),
 	EVENT_STALL("S2", Group.FRAME_RATE, "a plugin"),
 	CLIENT_BUSY("S3", Group.FRAME_RATE, "a client stall"),
-	CLIENT_WAITING("S4", Group.FRAME_RATE, "the client waiting"),
-	OTHER_PROGRAM("S5", Group.FRAME_RATE, "another program"),
 	FRAME_CAP("F1", Group.FRAME_RATE, "a frame cap"),
 	SLOW_DRAWING("F2", Group.FRAME_RATE, "slow drawing"),
 	CROWD("F3", Group.FRAME_RATE, "this place"),
@@ -57,7 +56,7 @@ public enum Cause
 		this.shortName = shortName;
 	}
 
-	/** The plan's id: "G1", "N6", "X", "-". */
+	/** The plan's id: "S3", "N6", "X", "-". */
 	public String id()
 	{
 		return id;
@@ -76,26 +75,23 @@ public enum Cause
 	}
 
 	/**
-	 * True for exactly sixteen causes: those of the fifteen rules of section 6 (D1, G1, S1, N3, N2, W1 - whose
-	 * condition form W1c reuses it - S3, S4, N6, F1, N1, F2, G2, V2, X) and {@link #WARMING_UP}.
+	 * True for exactly thirteen causes: those of the twelve rules of section 6 (D1, S1, N3, N2, W1 - whose
+	 * condition form W1c reuses it - S3, N6, F1, N1, F2, V2, X) and {@link #WARMING_UP}.
 	 */
 	public boolean inWaveOne()
 	{
 		switch (this)
 		{
 			case DISCONNECT:
-			case GC_PAUSE:
 			case MAP_LOAD:
 			case UPLOAD_LOSS:
 			case PING_JUMPY:
 			case SLOW_WORLD:
 			case CLIENT_BUSY:
-			case CLIENT_WAITING:
 			case DELIVERY_GAP:
 			case FRAME_CAP:
 			case PING_HIGH:
 			case SLOW_DRAWING:
-			case HEAP_CAP_LOW:
 			case ALL_CLEAR:
 			case NOT_SURE:
 			case WARMING_UP:

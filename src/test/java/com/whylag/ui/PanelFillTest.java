@@ -28,6 +28,8 @@ import static com.whylag.ui.PanelFixtures.onEdt;
 import static com.whylag.ui.PanelFixtures.pixel;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -152,15 +154,26 @@ public class PanelFillTest
 				assertEquals(f + " selected row", Ui.CARD_SELECTED, pixel(paintAsLaidOut(p.eventList(), 0), last, 12));
 			}
 
-			assertEquals(f + " buttons", Ui.BORDER, pixel(paintAsLaidOut(p.buttons(), 0), last, 10));
+
+			final HeaderRow header = p.header();
+			assertEquals(230, header.getWidth());
+			final java.awt.Rectangle gear = header.gearBounds();
+			assertEquals(f + " the gear ends at the edge", 230, gear.x + gear.width);
+			final BufferedImage head = paintAsLaidOut(header, 0);
+			boolean inked = false;
+			for (int y = gear.y; y < gear.y + gear.height; y++)
+			{
+				inked |= !pixel(head, last, y).equals(Ui.GROUND);
+			}
+			assertTrue(f + " the gear's last column is inked", inked);
 		}
 	}
 
 	// ------------------------------------------------------------------------------------------------ T4
 
-	/** T4: at 213, 223 and 230 the five cells and their four 3 px gaps add up to the width, the cells 1 px apart at most. */
+	/** T4: at 213, 223 and 230 the three cells and their two 3 px gaps add up to the width, 1 px apart at most. */
 	@Test
-	public void theFiveCellsShareTheWidth()
+	public void theThreeCellsShareTheWidth()
 	{
 		for (int panelWidth : new int[] {225, 235, 242})
 		{
@@ -170,11 +183,11 @@ public class PanelFillTest
 			assertEquals(width, p.cells().getWidth());
 			final BufferedImage strip = paintAsLaidOut(p.cells(), 0);
 			final List<int[]> runs = runs(strip, 47, Ui.CARD);
-			assertEquals("five cells at " + width, 5, runs.size());
+			assertEquals("three cells at " + width, 3, runs.size());
 			assertTrue("at " + width + " the gaps are the ground, 3 px", gapsAre(strip, 47, runs, 3));
 			assertEquals(0, runs.get(0)[0]);
-			assertEquals(width, runs.get(4)[1]);
-			shareTheWidth("cells at " + width, runs, width, 4 * 3);
+			assertEquals(width, runs.get(2)[1]);
+			shareTheWidth("cells at " + width, runs, width, 2 * 3);
 		}
 	}
 
@@ -182,11 +195,11 @@ public class PanelFillTest
 
 	/**
 	 * T5: the three chips share the width the same way, a press in the middle of each PAINTED chip selects that chip,
-	 * and the one button (the world test's second was parked on 2026-09-30) spans the whole width and copies from its
-	 * first pixel to its last.
+	 * and the header's gear (1.0.1, lot C) is pressed over its whole hit area, from its first column to the row's
+	 * last, and not one column further left.
 	 */
 	@Test
-	public void theChipsShareTheWidthAndTheButtonFillsIt()
+	public void theChipsShareTheWidthAndTheGearTakesItsPresses()
 	{
 		for (int panelWidth : new int[] {225, 235, 242})
 		{
@@ -217,19 +230,18 @@ public class PanelFillTest
 				assertEquals(wanted[k], (int) actions.ranges.get(k));
 			}
 
-			// The button: one, edge to edge, and every pixel of it copies.
-			final BufferedImage buttons = paintAsLaidOut(p.buttons(), 0);
-			final List<int[]> one = runs(buttons, 0, Ui.BORDER);
-			assertEquals("one button at " + width, 1, one.size());
-			assertEquals(0, one.get(0)[0]);
-			assertEquals(width, one.get(0)[1]);
-
-			PanelFixtures.press(p.buttons(), 0, 14);
-			assertEquals("its first pixel copies", 1, actions.reported.size());
-			PanelFixtures.press(p.buttons(), (one.get(0)[0] + one.get(0)[1] - 1) / 2, 14);
-			assertEquals("its middle copies", 2, actions.reported.size());
-			PanelFixtures.press(p.buttons(), one.get(0)[1] - 1, 14);
-			assertEquals("its last pixel copies", 3, actions.reported.size());
+			// The gear: a press on the first and on the last column of its hit area, a press anywhere in the row's
+			// height there, opens the menu (built fresh each time); one column further left opens nothing.
+			final int from = width - HeaderRow.GEAR - 4;
+			final javax.swing.JPopupMenu none = p.menu();
+			PanelFixtures.press(p.header(), from - 1, 10);
+			assertSame("one column left of the hit area: nothing", none, p.menu());
+			for (int[] at : new int[][] {{from, 0}, {(from + width) / 2, 10}, {width - 1, HeaderRow.HEIGHT - 1}})
+			{
+				final javax.swing.JPopupMenu before = p.menu();
+				PanelFixtures.press(p.header(), at[0], at[1]);
+				assertNotSame(width + ": a press at " + at[0] + "," + at[1] + " opens the menu", before, p.menu());
+			}
 		}
 	}
 
@@ -252,7 +264,7 @@ public class PanelFillTest
 		lanes.levels[Lane.FRAME_RATE.ordinal()][212] = (byte) Level.OK.ordinal();
 		final Fixture last = new Fixture("last-column", PanelFixtures.snapshot(PanelFixtures.WORLD,
 			PanelFixtures.clearAfter(PanelFixtures.WORLD), PanelFixtures.quietTiles(), 10, lanes.build(),
-			Collections.emptyList(), 24, 42), -1);
+			Collections.emptyList()), -1);
 		final WhyLagPanel p = PanelFixtures.panel(last, true);
 		layOutAt(p, 242);
 		assertEquals(width, p.strips().getWidth());
@@ -277,11 +289,11 @@ public class PanelFillTest
 		final long start = NOW - 10 * PanelFixtures.MIN;
 		final long from = Strip.columnStart(start, NOW, 100);
 		final Verdict v = PanelFixtures.eventVerdict(Cause.SLOW_WORLD, 9, from, 30);
-		final LagEvent band = PanelFixtures.event(9, from, 30, PanelFixtures.WORLD, v, 50, 34, 952, 1240, 640, 41, 41,
-			607, 768, 22, 37, 95);
+		final LagEvent band = PanelFixtures.event(9, from, 30, PanelFixtures.WORLD, v, 50, 34, 952, 1240, 640, 41,
+			41);
 		final Fixture banded = new Fixture("banded", PanelFixtures.snapshot(PanelFixtures.WORLD,
 			PanelFixtures.clearAfter(PanelFixtures.WORLD), PanelFixtures.quietTiles(), 10, new Lanes(10).build(),
-			Collections.singletonList(band), 24, 42), -1);
+			Collections.singletonList(band)), -1);
 		final WhyLagPanel q = PanelFixtures.panel(banded, true);
 		layOutAt(q, 242);
 		final int[] columns = q.strips().bandOf(9);
@@ -342,7 +354,7 @@ public class PanelFillTest
 			proof, "Hop to a quieter world.", "Frames and ping were fine.", PanelFixtures.D_START, 14,
 			PanelFixtures.WORLD, 3, null, null);
 		final Fixture f = new Fixture("wrapping", PanelFixtures.snapshot(PanelFixtures.WORLD, v,
-			PanelFixtures.quietTiles(), 10, new Lanes(10).build(), Collections.emptyList(), 24, 42), -1);
+			PanelFixtures.quietTiles(), 10, new Lanes(10).build(), Collections.emptyList()), -1);
 		final WhyLagPanel p = PanelFixtures.panel(f, true);
 
 		layOutAt(p, 225);
@@ -376,9 +388,10 @@ public class PanelFillTest
 	// ------------------------------------------------------------------------------------------------ T8
 
 	/**
-	 * T8: at 225 wide, both folds open, the quiet and the lag panel are the same pixels as before this change
-	 * ({@code src/test/resources/com/whylag/ui/panel-quiet-225.png} and {@code panel-lag-225.png}, made from the
-	 * code as it stood).
+	 * T8: at 225 wide, both folds open, the quiet and the lag panel are the same pixels as the pinned pictures
+	 * ({@code src/test/resources/com/whylag/ui/panel-quiet-225.png} and {@code panel-lag-225.png}), which were made
+	 * from the code as it stood and re-pinned for 1.0.1, lot C: no button, no verdict line, no version row, and the
+	 * gear at the header's right end with the world words left of it.
 	 */
 	@Test
 	public void at213NothingMoved() throws IOException

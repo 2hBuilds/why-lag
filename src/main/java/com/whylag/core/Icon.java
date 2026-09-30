@@ -1,7 +1,7 @@
 package com.whylag.core;
 
 /**
- * The game badge's picture of a cause (contract 3.2, P2.7): one of the five pictures of set A in
+ * The game badge's picture of a cause (contract 3.2, P2.7): one of the four pictures of set A in
  * {@code game-icons.js}, or {@link #NONE}, which means the status shape alone. {@link Answer} gives every cause and
  * card state its icon; the badge's painter loads {@code badge-<file>-<state>.png} for the WARN and BAD states only,
  * so OK and NO_DATA always draw a shape.
@@ -16,8 +16,6 @@ public enum Icon
 	LINE("line"),
 	/** The monitor: this PC, or the client on it. */
 	PC("pc"),
-	/** The memory stick: the client's memory. */
-	MEMORY("memory"),
 	/** The question mark: a lag whose cause cannot be told. */
 	UNKNOWN("unknown");
 
@@ -29,7 +27,7 @@ public enum Icon
 	}
 
 	/**
-	 * The icon's word in its file names, {@code badge-<file>-<state>.png}: "world", "line", "pc", "memory",
+	 * The icon's word in its file names, {@code badge-<file>-<state>.png}: "world", "line", "pc",
 	 * "unknown"; "" for {@link #NONE}, which has no file.
 	 */
 	public String file()

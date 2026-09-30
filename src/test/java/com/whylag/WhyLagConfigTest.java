@@ -25,7 +25,7 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Pins the config (contract 3.9): the group, the six keys and the stored names of the two enum settings are FROZEN
+ * Pins the config (contract 3.9): the group, the four keys and the stored names of the two enum settings are FROZEN
  * at first release - renaming one silently discards every user's setting - so they are written here as literals;
  * the four settings of the game badge sit in the one section, "Game screen"; their defaults are what RuneLite's
  * config proxy answers with nothing stored; and the interface is flat, because
@@ -52,16 +52,16 @@ public class WhyLagConfigTest
 	}
 
 	@Test
-	public void theKeysAreExactlyTheseSix()
+	public void theKeysAreExactlyTheseFour()
 	{
 		final Set<String> keys = new TreeSet<>();
 		for (Method m : items())
 		{
 			keys.add(m.getAnnotation(ConfigItem.class).keyName());
 		}
-		assertEquals(new TreeSet<>(Arrays.asList("systemStats", "badgeShow", "badgeStyle",
-			"badgeWhenSmooth", "badgeChatLine")), keys);
-		assertEquals(5, items().size());
+		assertEquals(new TreeSet<>(Arrays.asList("badgeShow", "badgeStyle", "badgeWhenSmooth", "badgeChatLine")),
+			keys);
+		assertEquals(4, items().size());
 		assertTrue("fewer than ten keys", keys.size() < 10);
 	}
 
@@ -102,7 +102,7 @@ public class WhyLagConfigTest
 
 	/**
 	 * The one section is a {@code String} constant of the interface, "gameScreen", named "Game screen"; the four
-	 * badge settings carry it and the two older items carry none. RuneLite keys a section by the constant's VALUE.
+	 * badge settings carry it and no item is outside it. RuneLite keys a section by the constant's VALUE.
 	 */
 	@Test
 	public void theBadgeKeysAreInTheGameScreenSection() throws IllegalAccessException
@@ -150,7 +150,8 @@ public class WhyLagConfigTest
 		final WhyLagConfig config = new WhyLagConfig()
 		{
 		};
-		assertTrue(config.systemStats());
+		assertTrue(config.badgeShow());
+		assertSame(BadgeStyle.ICON, config.badgeStyle());
 	}
 
 	/** The badge's four defaults as RuneLite hands them to the plugin with nothing stored: on, Icon, Show, on. */
@@ -162,7 +163,6 @@ public class WhyLagConfigTest
 		assertSame(BadgeStyle.ICON, config.badgeStyle());
 		assertSame(WhenSmooth.SHOW, config.badgeWhenSmooth());
 		assertTrue(config.badgeChatLine());
-		assertTrue(config.systemStats());
 	}
 
 	/**
@@ -192,8 +192,6 @@ public class WhyLagConfigTest
 	@Test
 	public void theWordsOfTheItems() throws NoSuchMethodException
 	{
-		assertItem("systemStats", "Exact memory pauses",
-			"Read memory clean-up pauses and processor use from Java. Off: memory is estimated.", 2);
 		assertItem("badgeShow", "Show on game screen", "A small badge on the game screen that shows what is lagging",
 			11);
 		assertItem("badgeStyle", "Style",

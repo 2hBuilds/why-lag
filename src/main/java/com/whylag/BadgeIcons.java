@@ -7,20 +7,20 @@ import java.util.function.Function;
 import net.runelite.client.util.ImageUtil;
 
 /**
- * The game badge's ten pictures (contract P2.7): 24 x 24, one per cause and state, {@code badge-<icon>-<state>.png}
- * with icon {@code world}, {@code line}, {@code pc}, {@code memory}, {@code unknown} ({@link Icon#file()}) and state
+ * The game badge's eight pictures (contract P2.7): 24 x 24, one per cause and state, {@code badge-<icon>-<state>.png}
+ * with icon {@code world}, {@code line}, {@code pc}, {@code unknown} ({@link Icon#file()}) and state
  * {@code warn} or {@code bad}. They are our own pixel art, made by {@code docs/handoff/lab/tools/whylag_icons.py} from
  * set A of {@code game-icons.js} and committed under {@code src/main/resources/com/whylag/}; nothing is downloaded.
  * The status shape of the state is already in each file's bottom right corner, and every icon but the globe is
  * tinted by the state.
  *
- * <p>All ten are loaded ONCE, in the constructor ({@code WhyLagPlugin.startUp}), with
+ * <p>All eight are loaded ONCE, in the constructor ({@code WhyLagPlugin.startUp}), with
  * {@link ImageUtil#loadImageResource}; {@link #get} only looks one up, so the overlay's {@code render} never loads
  * a picture (T20). OK and NO_DATA have no picture: those states draw a status shape alone.
  *
  * <p>Choice: fileName answers null where there is no file: Icon.NONE, OK, NO_DATA, or a null argument.
  * <p>Choice: a file that fails to load stays null, so get answers null and the painter draws the status shape.
- * <p>Choice: a package-private constructor takes the loader, so a test can count the ten loads.
+ * <p>Choice: a package-private constructor takes the loader, so a test can count the eight loads.
  */
 public final class BadgeIcons
 {
@@ -30,13 +30,13 @@ public final class BadgeIcons
 	/** One slot per icon and state: {@code icon.ordinal() * 2 + (BAD ? 1 : 0)}; NONE's two stay null. */
 	private final BufferedImage[] pictures = new BufferedImage[Icon.values().length * STATES.length];
 
-	/** Loads the ten pictures from this class's package with {@link ImageUtil#loadImageResource}. */
+	/** Loads the eight pictures from this class's package with {@link ImageUtil#loadImageResource}. */
 	public BadgeIcons()
 	{
 		this(name -> ImageUtil.loadImageResource(BadgeIcons.class, name));
 	}
 
-	/** Loads the ten pictures with {@code loader}, each file once; a load that throws leaves its slot null. */
+	/** Loads the eight pictures with {@code loader}, each file once; a load that throws leaves its slot null. */
 	BadgeIcons(Function<String, BufferedImage> loader)
 	{
 		for (Icon icon : Icon.values())

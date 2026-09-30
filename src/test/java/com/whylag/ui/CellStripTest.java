@@ -21,27 +21,27 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * The five cells (contract 5.2): FPS, Tick, Ping, Mem, CPU at x 0, 43, 86, 129, 172; the culprit cell of a
- * selected event with its red edge, its ground, its red value and its square; no culprit without a selection or
- * for a "Not sure" event; the worst tick in a selected event's Tick cell and the usual in the quiet one; the CPU
- * cell's two halves; the value falling from RuneScape Bold to RuneScape to RuneScape Small to fit 35 px; a dash, a
- * ring and the reason in the tooltip; no glyph cut at the bottom; and the cells following the selection.
+ * The three cells (contract 5.2): FPS, Tick, Ping at x 0, 72, 144, each 69 px wide; the culprit cell of a selected
+ * event with its red edge, its ground, its red value and its square; no culprit without a selection or for a "Not
+ * sure" event; the worst tick in a selected event's Tick cell and the usual in the quiet one; the value falling from
+ * RuneScape Bold to RuneScape to RuneScape Small to fit 35 px; a dash, a ring and the reason in the tooltip; no
+ * glyph cut at the bottom; and the cells following the selection.
  */
 public class CellStripTest
 {
 	@Test
-	public void fiveCellsInLaneOrder()
+	public void threeCellsInLaneOrder()
 	{
 		final CellStrip strip = panel(PanelFixtures.quiet(), false).cells();
-		final String[] names = {"FPS", "Tick", "Ping", "Mem", "CPU"};
-		assertEquals(5, strip.cells().length);
-		for (int i = 0; i < 5; i++)
+		final String[] names = {"FPS", "Tick", "Ping"};
+		assertEquals(3, strip.cells().length);
+		for (int i = 0; i < 3; i++)
 		{
 			assertEquals(Lane.values()[i], strip.cells()[i].lane);
 			assertEquals(names[i], strip.cells()[i].name);
 		}
 		final List<Drawn> drawn = record(strip);
-		for (int i = 0; i < 5; i++)
+		for (int i = 0; i < 3; i++)
 		{
 			final Drawn name = find(drawn, names[i]);
 			assertEquals(names[i], CellStrip.X[i] + 15, name.x);
@@ -84,7 +84,7 @@ public class CellStripTest
 		assertEquals(Ui.BAD_TEXT.getRGB(), value.colour.getRGB());
 		assertEquals(Ui.CULPRIT_LABEL.getRGB(), find(drawn, "Tick").colour.getRGB());
 		assertEquals(Ui.CULPRIT_LABEL.getRGB(), find(drawn, "ms", x0).colour.getRGB());
-		for (int i = 0; i < 5; i++)
+		for (int i = 0; i < 3; i++)
 		{
 			if (i == 1)
 			{
@@ -104,7 +104,7 @@ public class CellStripTest
 			assertFalse(c.name, c.culprit);
 		}
 		final BufferedImage img = PanelFixtures.paint(strip);
-		for (int i = 0; i < 5; i++)
+		for (int i = 0; i < 3; i++)
 		{
 			assertTrue(is(img, CellStrip.X[i], 0, Ui.CARD));
 			assertTrue(is(img, CellStrip.X[i] + 30, 40, Ui.CARD));
@@ -116,7 +116,7 @@ public class CellStripTest
 	@Test
 	public void noCellIsACulpritWithoutASelection()
 	{
-		for (String name : new String[] {"quiet", "answer-w1", "answer-g1", "answer-n3", "clear-here"})
+		for (String name : new String[] {"quiet", "answer-w1", "answer-s3", "answer-n3", "clear-here"})
 		{
 			final WhyLagPanel p = panel(PanelFixtures.named(name), false);
 			assertEquals(-1, p.selectedId());
@@ -125,13 +125,13 @@ public class CellStripTest
 				assertFalse(name + ": " + c.name, c.culprit);
 			}
 			final BufferedImage img = PanelFixtures.paint(p.cells());
-			for (int i = 0; i < 5; i++)
+			for (int i = 0; i < 3; i++)
 			{
 				assertTrue(name, is(img, CellStrip.X[i], 0, Ui.CARD));
 			}
 		}
-		assertEquals("the card does hold the event's verdict", "Memory stall",
-			panel(PanelFixtures.named("answer-g1"), false).card().line1());
+		assertEquals("the card does hold the event's verdict", "Client froze",
+			panel(PanelFixtures.named("answer-s3"), false).card().line1());
 	}
 
 	@Test
@@ -154,30 +154,14 @@ public class CellStripTest
 		assertEquals(Ui.WHITE.getRGB(), d.colour.getRGB());
 	}
 
-	@Test
-	public void theCpuCellShowsTheGameBigAndThePcUnder()
-	{
-		final List<Drawn> drawn = record(panel(PanelFixtures.quiet(), false).cells());
-		final Drawn game = find(drawn, "42%");
-		final Drawn pc = find(drawn, "PC 24");
-		assertEquals(CellStrip.X[4] + 5, game.x);
-		assertEquals(30, game.y);
-		assertEquals(Ui.RSB, game.font);
-		assertEquals(CellStrip.X[4] + 5, pc.x);
-		assertEquals(43, pc.y);
-		assertEquals(Ui.RSS, pc.font);
-		assertEquals(Ui.LABEL.getRGB(), pc.colour.getRGB());
-		assertTrue("PC 100, the widest unit, fits 35 px", Ui.width(Ui.RSS, "PC 100") <= 35);
-	}
-
 	/** "1,240" is 37 px in bold and falls to RS; "9,999" falls to RSS; "952" stays bold - each inside x 5 .. 39. */
 	@Test
 	public void aValueTooWideForBoldFallsToTheNextFace()
 	{
 		final CellStrip strip = PanelFixtures.onEdt(CellStrip::new);
-		final String[] values = {"952", "1,240", "9,999", "100%", "999%"};
-		final Cell[] cells = new Cell[5];
-		for (int i = 0; i < 5; i++)
+		final String[] values = {"952", "1,240", "9,999"};
+		final Cell[] cells = new Cell[3];
+		for (int i = 0; i < 3; i++)
 		{
 			cells[i] = new Cell(Lane.values()[i], "N", values[i], "u", Level.OK, false, "");
 		}
@@ -186,11 +170,10 @@ public class CellStripTest
 		assertEquals(Ui.RSB, find(drawn, "952").font);
 		assertEquals(Ui.RS, find(drawn, "1,240").font);
 		assertEquals(Ui.RSS, find(drawn, "9,999").font);
-		assertEquals(Ui.RS, find(drawn, "100%").font);
 		assertEquals(37, Ui.width(Ui.RSB, "1,240"));
 		assertEquals(33, Ui.width(Ui.RS, "1,240"));
 		assertEquals(36, Ui.width(Ui.RS, "9,999"));
-		for (int i = 0; i < 5; i++)
+		for (int i = 0; i < 3; i++)
 		{
 			final Drawn d = find(drawn, values[i]);
 			assertEquals(values[i], CellStrip.X[i] + 5, d.x);
@@ -219,7 +202,7 @@ public class CellStripTest
 		assertTrue("the ring", is(img, x0 + 5, 7 + 3, Ui.LABEL));
 		assertTrue("hollow", is(img, x0 + 5 + 3, 7 + 3, Ui.CARD));
 		assertEquals("Frame rate: 50 fps, worst 35 ms", PanelFixtures.tip(strip, 20, 20));
-		assertNull("no tooltip in the gap between cells", PanelFixtures.tip(strip, 41, 20));
+		assertNull("no tooltip in the gap between cells", PanelFixtures.tip(strip, 70, 20));
 	}
 
 	/** Painted with no clip into a taller image, the unit's glyphs stop above the cell's bottom row, y 47. */
@@ -296,7 +279,7 @@ public class CellStripTest
 		final List<Drawn> found = new ArrayList<>();
 		for (Drawn d : drawn)
 		{
-			if (d.text.equals(text) && (cellX < 0 || (d.x >= cellX && d.x < cellX + 41)))
+			if (d.text.equals(text) && (cellX < 0 || (d.x >= cellX && d.x < cellX + 72)))
 			{
 				found.add(d);
 			}

@@ -11,8 +11,8 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * What the judge says when a signal cannot be read (contract 6.3, section 7 L4): no ping, no usual, the fallback
- * memory source, an unknown heap limit. A missing signal costs reach or a step of confidence, never a wrong cause.
+ * What the judge says when a signal cannot be read (contract 6.3, section 7 L4): no ping, no usual. A missing
+ * signal costs reach or a step of confidence, never a wrong cause.
  */
 public class VerdictNoDataTest
 {
@@ -70,27 +70,9 @@ public class VerdictNoDataTest
 			spec(120, 133, Trigger.TICK_OFF));
 	}
 
-	private static Judged fallbackFreeze()
-	{
-		return new Judged("fallback memory", Trace.steady(200).usual(USUAL).busyUnknown().gcInferred(119, 400)
-			.frameGap(120, 450, 450).settings(VerdictCauseTest.runtimeMemory()), spec(120, 120, Trigger.FRAME_GAP));
-	}
-
-	private static Judged fallbackBusyStall()
-	{
-		return new Judged("S3, fallback memory", VerdictCauseTest.s3Trace()
-			.settings(VerdictCauseTest.runtimeMemory()), spec(120, 120, Trigger.FRAME_GAP));
-	}
-
-	private static Judged fallbackIdleStall()
-	{
-		return new Judged("S4, fallback memory", VerdictCauseTest.s4Trace()
-			.settings(VerdictCauseTest.runtimeMemory()), spec(120, 120, Trigger.FRAME_GAP));
-	}
-
 	private static Judged stallWithNoUsual()
 	{
-		return new Judged("S3, no usual", Trace.steady(200).frameGap(120, 600, 480).busy(120, 700),
+		return new Judged("S3, no usual", Trace.steady(200).frameGap(120, 600, 480),
 			spec(120, 120, Trigger.FRAME_GAP).usual(NO_USUAL));
 	}
 
@@ -98,12 +80,6 @@ public class VerdictNoDataTest
 	{
 		return new Judged("W1, no usual", Trace.steady(200).ticksEvery(120, 133, 900),
 			spec(120, 133, Trigger.TICK_OFF).usual(NO_USUAL));
-	}
-
-	private static Judged pauseWithAnUnknownHeapLimit()
-	{
-		return new Judged("G1, heap limit unknown", Trace.steady(200).usual(USUAL).gcPause(120, 0, 150, 400)
-			.frameGap(120, 170, 170).settings(VerdictCauseTest.heapLimit(0)), spec(120, 120, Trigger.GC_PAUSE));
 	}
 
 	/**
@@ -128,12 +104,8 @@ public class VerdictNoDataTest
 		out.add(stallWithNoPing());
 		out.add(slowWorldWithNoPing());
 		out.add(slowWorldWithAStalePing());
-		out.add(fallbackFreeze());
-		out.add(fallbackBusyStall());
-		out.add(fallbackIdleStall());
 		out.add(stallWithNoUsual());
 		out.add(slowWorldWithNoUsual());
-		out.add(pauseWithAnUnknownHeapLimit());
 		out.add(gapWithAHighPingAndNoUsual());
 		return out;
 	}
@@ -153,7 +125,7 @@ public class VerdictNoDataTest
 		assertEquals(Confidence.LIKELY, VerdictCauseTest.n3().verdict().confidence);
 
 		final Judged stall = stallWithNoPing();
-		assertEquals("the calm-ping support is skipped", 90, Rules.S3.score(stall.evidence));
+		assertEquals("the calm-ping support is skipped", 80, Rules.S3.score(stall.evidence));
 		assertEquals(Cause.CLIENT_BUSY, stall.verdict.cause);
 		assertEquals("Hint, one step down", Confidence.CANT_TELL, stall.verdict.confidence);
 		assertEquals(Confidence.HINT, VerdictCauseTest.s3().verdict().confidence);
@@ -178,53 +150,6 @@ public class VerdictNoDataTest
 			assertFalse(j.name, j.verdict.proof.contains("No ticks"));
 		}
 		assertEquals(Cause.SLOW_WORLD, VerdictCauseTest.w1().verdict().cause);
-	}
-
-	@Test
-	public void fallbackMemoryNeverNamesG1()
-	{
-		final Judged j = fallbackFreeze();
-		assertEquals("pauses cannot be known", -1, j.evidence.gcMs);
-		assertEquals(-1, j.evidence.gcCoverPct);
-		assertEquals(-1, j.evidence.gcOverlapMs);
-		assertEquals(0, Rules.G1.score(j.evidence));
-		assertNotEquals(Cause.GC_PAUSE, j.verdict.cause);
-		assertNotEquals(Cause.GC_PAUSE, j.verdict.alsoA);
-		assertNotEquals(Cause.GC_PAUSE, j.verdict.alsoB);
-		assertEquals(Cause.CLIENT_BUSY, j.verdict.cause);
-		assertTrue(j.verdict.ruledOut, j.verdict.ruledOut.endsWith("Memory pauses not measured."));
-		assertFalse(j.verdict.proof, j.verdict.proof.contains("memory"));
-
-		// An inferred collection INSIDE the frozen frame is still no pause: it has no length.
-		final Judged inside = new Judged("inferred inside", Trace.steady(200).usual(USUAL).busyUnknown()
-			.gcInferred(120, 400).frameGap(120, 450, 450).settings(VerdictCauseTest.runtimeMemory()),
-			spec(120, 120, Trigger.FRAME_GAP));
-		assertTrue(inside.evidence.gcInferred);
-		assertNotEquals(Cause.GC_PAUSE, inside.verdict.cause);
-
-		// On the measured source a pause that covers the same freeze IS named, and nothing is "not measured".
-		final Trace measured = Trace.steady(200).usual(USUAL).gcPause(120, 0, 450, 400).frameGap(120, 450, 450);
-		final Judged m = new Judged("measured", measured, spec(120, 120, Trigger.FRAME_GAP, Trigger.GC_PAUSE));
-		assertEquals(Cause.GC_PAUSE, m.verdict.cause);
-		assertFalse(m.verdict.ruledOut, m.verdict.ruledOut.contains("not measured"));
-	}
-
-	@Test
-	public void fallbackMemoryLowersTheStallCeiling()
-	{
-		final Judged busy = fallbackBusyStall();
-		assertEquals("the exclude on the cover is skipped", 100, Rules.S3.score(busy.evidence));
-		assertEquals(Cause.CLIENT_BUSY, busy.verdict.cause);
-		assertEquals("Hint, one step down", Confidence.CANT_TELL, busy.verdict.confidence);
-		assertTrue(busy.verdict.ruledOut.endsWith("Memory pauses not measured."));
-
-		final Judged idle = fallbackIdleStall();
-		assertEquals(Cause.CLIENT_WAITING, idle.verdict.cause);
-		assertEquals(Confidence.CANT_TELL, idle.verdict.confidence);
-
-		assertEquals("measured, the same stall is a Hint", Confidence.HINT, VerdictCauseTest.s3().verdict().confidence);
-		assertEquals(Confidence.HINT, VerdictCauseTest.s4().verdict().confidence);
-		assertEquals(Confidence.SURE, Rules.G1.confidence(VerdictCauseTest.g1().evidence()));
 	}
 
 	@Test
@@ -284,7 +209,7 @@ public class VerdictNoDataTest
 		assertEquals(Cause.DELIVERY_GAP, j.verdict.cause);
 		assertEquals(Confidence.CANT_TELL, j.verdict.confidence);
 		assertEquals("No ticks for 3.0 s. Frames were fine.", j.verdict.proof);
-		assertEquals("Memory and frames were fine.", j.verdict.ruledOut);
+		assertEquals("Frames were fine.", j.verdict.ruledOut);
 		assertFalse(j.verdict.proof, j.verdict.proof.contains("ping"));
 
 		// With a usual of 40 the same 400 ms is a spike, which excludes N6: nothing answers, and X names the ticks.
@@ -302,30 +227,7 @@ public class VerdictNoDataTest
 			.on(cs), calm.settings());
 		assertEquals(Cause.DELIVERY_GAP, n6.cause);
 		assertEquals("No ticks for 3.0 s. Frames and ping were fine.", n6.proof);
-		assertEquals("Memory, frames and ping were fine.", n6.ruledOut);
-	}
-
-	@Test
-	public void anUnknownHeapLimitIsNotG2()
-	{
-		final SettingsView unknown = VerdictCauseTest.heapLimit(0);
-		final Session s = Trace.steady(200).usual(USUAL).build();
-		assertEquals(-1, EvidenceBuilder.forCondition(s, 200, unknown).heapMaxMb);
-		final VerdictEngine engine = new VerdictEngine();
-		for (int now = 1; now <= 200; now++)
-		{
-			assertEquals("at " + now, Cause.ALL_CLEAR, engine.current(s, now, s.wallMsOf(now), unknown).cause);
-		}
-		assertEquals("a negative limit is unknown too", -1,
-			EvidenceBuilder.forCondition(s, 200, VerdictCauseTest.heapLimit(-5)).heapMaxMb);
-		assertEquals("a limit that is known and low IS G2", Cause.HEAP_CAP_LOW,
-			card(s, VerdictCauseTest.heapLimit(512), 200).cause);
-
-		final Judged pause = pauseWithAnUnknownHeapLimit();
-		assertEquals(-1, pause.evidence.heapMaxMb);
-		assertEquals(400, pause.evidence.heapUsedMb);
-		assertEquals(Cause.GC_PAUSE, pause.verdict.cause);
-		assertEquals("its first sentence alone", "A 150 ms pause.", pause.verdict.proof);
+		assertEquals("Frames and ping were fine.", n6.ruledOut);
 	}
 
 	@Test
@@ -342,7 +244,7 @@ public class VerdictNoDataTest
 			assertWithinCeiling(c.id, c.verdict());
 			checked++;
 		}
-		assertEquals(26, checked);
+		assertEquals(19, checked);
 	}
 
 	private static void assertWithinCeiling(String name, Verdict v)

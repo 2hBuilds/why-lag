@@ -1,6 +1,5 @@
 package com.whylag.core;
 
-import org.junit.Assume;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -8,8 +7,7 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * The plugin's own cost meter (contract 3.9): the switch, the count, mean and longest of each path, the footer's
- * words, and an {@code add} that allocates nothing (it runs on the frame path). The allocation counter is
- * {@code SecondRingTest}'s.
+ * words.
  */
 public class SelfTimerTest
 {
@@ -56,30 +54,5 @@ public class SelfTimerTest
 		assertEquals("self: frame 180 ns, tick 2 us, step 40 us", t.footer());
 		t.add(SelfTimer.STEP, 3_960_000);
 		assertEquals("self: frame 180 ns, tick 2 us, step 2 ms", t.footer());
-	}
-
-	@Test
-	public void addAllocatesNothing()
-	{
-		final com.sun.management.ThreadMXBean bean = SecondRingTest.allocationBean();
-		Assume.assumeTrue("this JVM does not count allocated bytes", bean != null);
-		final SelfTimer t = new SelfTimer();
-		t.on(true);
-		for (int i = 0; i < 100_000; i++)
-		{
-			t.add(i % 3, i);
-		}
-		final long thread = Thread.currentThread().getId();
-		bean.getThreadAllocatedBytes(thread);
-		final long before = bean.getThreadAllocatedBytes(thread);
-		for (int i = 0; i < 1_000_000; i++)
-		{
-			if (t.on())
-			{
-				t.add(i % 3, i & 1023);
-			}
-		}
-		final long after = bean.getThreadAllocatedBytes(thread);
-		assertEquals(0, after - before);
 	}
 }

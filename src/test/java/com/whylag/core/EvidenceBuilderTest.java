@@ -17,8 +17,7 @@ public class EvidenceBuilderTest
 	/** FPS Control with its focused limit off and its unfocused limit on at 10, on the CPU renderer (3.7). */
 	private static SettingsView unfocusedLimit()
 	{
-		return new SettingsView(Renderer.CPU, true, false, 0, true, 10, false, "", 0, 0, "", 0, 60, 768,
-			MemorySource.MANAGEMENT, Os.WINDOWS, "");
+		return new SettingsView(Renderer.CPU, true, false, 0, true, 10, false, "", 0, 0, "", 0, 60, Os.WINDOWS, "");
 	}
 
 	private static Evidence ofEvent(Trace t, int from, int to, Trigger first, Trigger... more)
@@ -43,13 +42,8 @@ public class EvidenceBuilderTest
 		assertEquals(-1, e.lastTickSec);
 		assertEquals(22, e.frameGapMs);
 		assertEquals(200, e.frameLimitMs);
-		assertEquals("measured, none", 0, e.gcMs);
-		assertEquals(0, e.gcCoverPct);
-		assertEquals(0, e.gcOverlapMs);
-		assertFalse(e.gcInferred);
 		assertEquals(0, e.loadMs);
 		assertEquals(0, e.loads);
-		assertEquals(300, e.busyPm);
 		assertEquals(50, e.capFps);
 		assertEquals(20, e.capIntervalMs);
 		assertFalse(e.capSelfSet);
@@ -75,8 +69,6 @@ public class EvidenceBuilderTest
 		assertEquals(600, e.tickWorstMs);
 		assertEquals(600, e.noTickMs);
 		assertEquals(0, e.tickOffMs);
-		assertEquals(400, e.heapUsedMb);
-		assertEquals(768, e.heapMaxMb);
 		assertEquals(10, e.durationS);
 		assertEquals(416, e.world);
 		assertEquals(-1, e.beforeRtt);
@@ -107,7 +99,6 @@ public class EvidenceBuilderTest
 		// Before any second is complete there is nothing to read.
 		final Evidence none = ofWindow(Trace.steady(200), 0);
 		assertEquals(-1, none.fps);
-		assertEquals(-1, none.heapMaxMb);
 		assertFalse(none.capSelfSet);
 	}
 
@@ -259,15 +250,9 @@ public class EvidenceBuilderTest
 	public void theWorstFrameIsTheEarliestOfATie()
 	{
 		final Trace t = Trace.steady(200).usual(USUAL).settings(unfocusedLimit())
-			.frameGap(120, 600, 450).busy(120, 700).unfocused(120, 120)
-			.frameGap(122, 500, 450).busy(122, 100).gcPause(122, 100, 300, 400);
-		final Evidence e = ofEvent(t, 120, 122, Trigger.FRAME_GAP, Trigger.GC_PAUSE);
+			.frameGap(120, 600, 450).unfocused(120, 120).frameGap(122, 500, 450);
+		final Evidence e = ofEvent(t, 120, 122, Trigger.FRAME_GAP);
 		assertEquals(450, e.frameGapMs);
-		assertEquals("the earlier second's busy share", 700, e.busyPm);
-		assertEquals("the join is on the earlier frame, 120.15 to 120.60 s: the pause at 122.1 s is not in it", 0,
-			e.gcMs);
-		assertEquals(0, e.gcCoverPct);
-		assertEquals(0, e.gcOverlapMs);
 		assertEquals("the earlier second was unfocused: FPS Control's unfocused limit", 10, e.capFps);
 		assertEquals(100, e.capIntervalMs);
 		assertTrue(e.capSelfSet);
@@ -275,22 +260,15 @@ public class EvidenceBuilderTest
 
 		// One ms longer, the later frame is the worst, and everything comes from ITS second.
 		final Trace later = Trace.steady(200).usual(USUAL).settings(unfocusedLimit())
-			.frameGap(120, 600, 450).busy(120, 700).unfocused(120, 120)
-			.frameGap(122, 500, 451).busy(122, 100).gcPause(122, 100, 300, 400);
-		final Evidence l = ofEvent(later, 120, 122, Trigger.FRAME_GAP, Trigger.GC_PAUSE);
+			.frameGap(120, 600, 450).unfocused(120, 120).frameGap(122, 500, 451);
+		final Evidence l = ofEvent(later, 120, 122, Trigger.FRAME_GAP);
 		assertEquals(451, l.frameGapMs);
-		assertEquals(100, l.busyPm);
-		assertEquals("122.049 to 122.500 s holds the pause from 122.1 s", 300, l.gcMs);
-		assertEquals(300, l.gcOverlapMs);
-		assertEquals(300 * 100 / 451, l.gcCoverPct);
 		assertEquals("focused: the client's own cap", 50, l.capFps);
 		assertFalse(l.capSelfSet);
 
 		// The window follows the same rule for its worst frame.
 		final Evidence w = ofWindow(t, 125);
 		assertEquals(450, w.frameGapMs);
-		assertEquals(700, w.busyPm);
-		assertEquals(0, w.gcMs);
 	}
 
 	@Test
@@ -338,11 +316,10 @@ public class EvidenceBuilderTest
 		// Login at 45 (seconds 40 to 44 of the window are the login screen, 45 to 53 carry the login mask), a hop
 		// at 70 (71 to 79 masked), a load in 85. Each masked second holds a number that would show if it counted.
 		final Trace t = Trace.steady(100).usual(USUAL).loginAt(45)
-			.heap(42, 42, 670)
-			.heap(50, 50, 660).rtt(50, 50, 810).fps(50, 50, 7)
-			.hop(70, 302).heap(70, 70, 650).rtt(70, 70, 800).fps(70, 70, 6)
-			.loading(85, 1000).heap(85, 85, 700).rtt(85, 85, 900).fps(85, 85, 5)
-			.heap(86, 86, 500).rtt(86, 86, 95).frameGap(86, 990, 90);
+			.rtt(50, 50, 810).fps(50, 50, 7)
+			.hop(70, 302).rtt(70, 70, 800).fps(70, 70, 6)
+			.loading(85, 1000).rtt(85, 85, 900).fps(85, 85, 5)
+			.rtt(86, 86, 95).frameGap(86, 990, 90);
 		final Session s = t.build();
 		assertTrue(Flags.has(s.seconds.flags(42), Flags.NOT_LOGGED_IN));
 		assertTrue(Flags.has(s.seconds.flags(50), Flags.LOGIN_MASK));
@@ -351,8 +328,7 @@ public class EvidenceBuilderTest
 		assertFalse("the second after the load is masked by Masks alone", Flags.masked(s.seconds.flags(86)));
 
 		final Evidence w = EvidenceBuilder.forCondition(s, 100, t.settings());
-		assertEquals("the load-tail second counts", 500, w.heapUsedMb);
-		assertEquals(90, w.frameGapMs);
+		assertEquals("the load-tail second counts", 90, w.frameGapMs);
 		assertEquals(95, w.rttMax);
 		assertEquals(40, w.rttMin);
 		assertEquals(50, w.fps);
@@ -362,7 +338,6 @@ public class EvidenceBuilderTest
 
 		// An EVENT over the same seconds reads every one of them, masked or not.
 		final Evidence e = EvidenceBuilder.forEvent(s, event(s, 0, 40, 99, Trigger.FRAME_GAP), t.settings());
-		assertEquals(700, e.heapUsedMb);
 		assertEquals(200, e.frameGapMs);
 		assertEquals(900, e.rttMax);
 
@@ -381,7 +356,7 @@ public class EvidenceBuilderTest
 		assertEquals(100 - 8 - 15 - 15, counted);
 
 		// With every second of the window masked there is nothing to read, and no condition scores.
-		final Trace loading = Trace.steady(100).usual(USUAL).settings(VerdictCauseTest.heapLimit(512));
+		final Trace loading = Trace.steady(100).usual(USUAL);
 		for (int sec = 0; sec < 100; sec++)
 		{
 			loading.loading(sec, 1000);
@@ -389,7 +364,6 @@ public class EvidenceBuilderTest
 		final Evidence none = ofWindow(loading, 100);
 		assertEquals(-1, none.fps);
 		assertEquals(-1, none.frameGapMs);
-		assertEquals(-1, none.heapMaxMb);
 		assertFalse(none.rttKnown);
 		assertEquals(null, Rules.bestCondition(none));
 

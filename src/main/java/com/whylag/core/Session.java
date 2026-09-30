@@ -8,9 +8,8 @@ import java.time.ZoneId;
  * slack, section 3.3).
  *
  * <p><b>One writer for each piece.</b> The frame columns of {@link #seconds} and {@link #ticks}: the samplers, on
- * the client thread. The host columns of {@link #seconds}: the engine, on the sampler thread. {@link #gcs}: the
- * engine (the notification thread, and the fallback on the sampler thread; {@link GcRing#put} is synchronized).
- * {@link #events}: the engine, on the sampler thread. The three usuals: the detector alone, on the sampler thread;
+ * the client thread. The host columns of {@link #seconds}: the engine, on the sampler thread. {@link #events}: the
+ * engine, on the sampler thread. The three usuals: the detector alone, on the sampler thread;
  * {@link #rttUsual} is reset by it when the {@code world} column changes from one second to the next. The login
  * second ({@link #loggedInSince}): {@code LagEngine.gameState} alone, on the client thread (and the test helper
  * {@code Trace}). Everyone else only reads.
@@ -56,8 +55,6 @@ public final class Session
 	public final SecondRing seconds;
 	/** {@link Thresholds#TICKS} + 1 slots. */
 	public final TickRing ticks;
-	/** {@link Thresholds#GC_PAUSES} + 1 slots. */
-	public final GcRing gcs;
 	/** {@link Thresholds#EVENTS} events. */
 	public final EventLog events;
 	/** This world's RTT; max 2000; reset when the world COLUMN changes. */
@@ -78,7 +75,6 @@ public final class Session
 		this.zone = zone;
 		seconds = new SecondRing(Thresholds.SECONDS + 1);
 		ticks = new TickRing(Thresholds.TICKS + 1);
-		gcs = new GcRing(Thresholds.GC_PAUSES + 1);
 		events = new EventLog(Thresholds.EVENTS);
 		rttUsual = new Usual(RTT_USUAL_MAX_MS);
 		rttSession = new Usual(RTT_USUAL_MAX_MS);

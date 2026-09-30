@@ -3,14 +3,14 @@ package com.whylag.core;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * The facade of the recording (contract 3.10 and section 7, L2): the plugin hands it frames, ticks, game states,
- * host samples and collections, and once a second a {@link #step}; it answers the verdict, the open event and the
+ * The facade of the recording (contract 3.10 and section 7, L2): the plugin hands it frames, ticks, game states
+ * and host samples, and once a second a {@link #step}; it answers the verdict, the open event and the
  * panel's snapshot ({@link LagSource}). It joins the {@link Detector}, the {@link Judge} and the
  * {@link SnapshotSource} it was given and names no class of theirs.
  *
  * <p><b>Threads.</b> {@link #frame}, {@link #tick}, {@link #gameState}, {@link #world} and {@link #scene} run on
- * the client thread and take NO lock (T4); {@link #focus} is a volatile write from any thread; {@link #gcPause}
- * comes from the JVM's notification thread; {@link #host} and {@link #step} run on the sampler thread.
+ * the client thread and take NO lock (T4); {@link #focus} is a volatile write from any thread; {@link #host} and
+ * {@link #step} run on the sampler thread.
  * {@link #step} and {@link #snapshot} share one lock, and nothing else takes it. Recording never waits for the
  * panel: nothing here knows whether one exists (T10).
  *
@@ -46,18 +46,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * <br>
  * Choice: a listener that throws is skipped for that change; the others are still told.
  * <br>
- * Choice: the heap fallback compares each written sample's heap with that of the written sample before it.
- * <br>
- * Choice: an inferred collection sits at the START of the first second that carries the sample's heap,
- * {@code session.msOfSec(k)}, as {@code Trace.gcInferred} puts one: k is the second the sample fills, or the first
- * second of a short hole, whose seconds carry the same heap (the fillers of a long hole carry none).
- * <br>
  * Choice: the verdict listeners are told on the sampler thread INSIDE the step lock, in the order they were added.
  * <br>
  * Choice: {@link #addVerdictListener} ignores null and a listener already added.
  * <br>
- * Choice: {@link #snapshot} before the first step builds with {@code SettingsView.unknown(0, Os.OTHER,
- * MemorySource.RUNTIME)}, the settings the constructor judged with (ruling R1).
+ * Choice: {@link #snapshot} before the first step builds with {@code SettingsView.unknown(Os.OTHER)}, the
+ * settings the constructor judged with (ruling R1).
  */
 public final class LagEngine implements LagSource
 {
@@ -79,8 +73,6 @@ public final class LagEngine implements LagSource
 	/** The host carrier and the filler of a long hole: sampler thread only. */
 	private final HostSecond host = new HostSecond();
 	private final HostSecond filler = new HostSecond();
-	/** The heap of the written sample before this one; -1 = none. Sampler thread only. */
-	private int heapBeforeMb = -1;
 
 	/** The newest code handed to {@link #gameState} that was not LOGGING_IN. Client thread only. */
 	private int codeBefore = State.OTHER;
@@ -112,9 +104,9 @@ public final class LagEngine implements LagSource
 	// ---------------------------------------------------------------- the client thread
 
 	/** One frame. Client thread; no lock, no allocation. */
-	public void frame(long nanos, int gameCycle, long threadCpuNanos)
+	public void frame(long nanos, int gameCycle)
 	{
-		frames.frame(nanos, gameCycle, threadCpuNanos);
+		frames.frame(nanos, gameCycle);
 	}
 
 	/** One game tick. Client thread; no lock, no allocation. */
@@ -173,19 +165,10 @@ public final class LagEngine implements LagSource
 		frames.focus(focused);
 	}
 
-	// ---------------------------------------------------------------- the notification thread
-
-	/** One collection, its start in SESSION ms; {@code durationMs} -1 = inferred. Any thread. */
-	public void gcPause(long startMs, int durationMs, int heapAfterMb)
-	{
-		session.gcs.put(startMs, durationMs, heapAfterMb);
-	}
-
 	// ---------------------------------------------------------------- the sampler thread
 
 	/** One host sample, taken at {@code nanos}: it fills the second before the one it was taken in. */
-	public void host(long nanos, long rttMicros, long sent, long resent, NoData conn, int heapUsedMb,
-		int procCpuPct, int sysCpuPct)
+	public void host(long nanos, long rttMicros, long sent, long resent, NoData conn)
 	{
 		final SecondRing ring = session.seconds;
 		final long sec = session.secOf(nanos) - 1;
@@ -197,19 +180,13 @@ public final class LagEngine implements LagSource
 		final HostSecond h = host;
 		h.clear();
 		loss.sample(nanos, rttMicros, sent, resent, conn, h);
-		h.heapUsedMb = heapUsedMb;
-		h.procCpuPct = procCpuPct;
-		h.sysCpuPct = sysCpuPct;
 		latestRttMs = h.rttMs;
 
 		final long hole = sec - head - 1;
-		// the first second that carries this sample's heap: a short hole's seconds do, a long hole's fillers do not
-		long heapFromSec = sec;
 		if (hole > 0)
 		{
 			if (hole <= Thresholds.HOST_FILL_S)
 			{
-				heapFromSec = head + 1;
 				final int sentUnits = h.sentUnits;
 				final int resentUnits = h.resentUnits;
 				h.sentUnits = 0;
@@ -233,15 +210,6 @@ public final class LagEngine implements LagSource
 			}
 		}
 		ring.putHost(sec, h);
-
-		final SettingsView settings = lastSettings;
-		if (settings != null && settings.memorySource == MemorySource.RUNTIME && heapUsedMb >= 0
-			&& heapBeforeMb >= 0 && heapBeforeMb - heapUsedMb >= Thresholds.HEAP_DROP_MB)
-		{
-			// at the START of the second whose heap shows the fall, as Trace.gcInferred puts one (contract 3.12)
-			session.gcs.put(session.msOfSec(heapFromSec), -1, heapUsedMb);
-		}
-		heapBeforeMb = heapUsedMb;
 	}
 
 	/** The one-second step: the detector, the log, the open event, the verdict. Sampler thread. */
@@ -348,7 +316,7 @@ public final class LagEngine implements LagSource
 	/** The settings of a session that has not been stepped yet (ruling R1). */
 	private static SettingsView unknownSettings()
 	{
-		return SettingsView.unknown(0, Os.OTHER, MemorySource.RUNTIME);
+		return SettingsView.unknown(Os.OTHER);
 	}
 
 	/** What the detector tells the engine during a step: the log's one writer. Used under the step lock only. */

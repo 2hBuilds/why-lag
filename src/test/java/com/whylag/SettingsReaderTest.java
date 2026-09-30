@@ -1,68 +1,60 @@
 package com.whylag;
 
 import com.whylag.core.CapSource;
-import com.whylag.core.MemorySource;
 import com.whylag.core.Os;
 import com.whylag.core.Renderer;
 import com.whylag.core.SettingsView;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 import java.util.function.IntSupplier;
-import java.util.function.Supplier;
-import net.bytebuddy.ByteBuddy;
-import net.bytebuddy.dynamic.loading.ClassLoadingStrategy;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.plugins.Plugin;
-import net.runelite.client.plugins.PluginManager;
+import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.fps.FpsPlugin;
-import net.runelite.client.plugins.gpu.GpuPlugin;
 import org.junit.Before;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * The settings reader (contract 3.7, 3.11, 7 L7; skeptic C10, C11): the plugins found by class name; a group read
- * ONLY while its plugin is active; 117 HD winning over the GPU plugin; RuneLite's own defaults for missing keys;
- * both suppliers asked on every read; a failed read answering {@code SettingsView.unknown} with the memory source
- * the supplier gave; and a read that never throws.
+ * The settings reader (contract 3.7, 3.11, 7 L7; skeptic C10, C11), over a {@code ConfigManager} and two suppliers
+ * (1.0.0, the Hub's rule: no plugin manager and no plugin object): whether a GPU renderer is on is the client's own
+ * answer ({@code Client#isGpu()}, a supplier here); whether 117 HD and FPS Control are on is RuneLite's own stored
+ * flag under the group "runelite"; a group is read ONLY while its plugin is on; with a GPU renderer on, 117 HD's
+ * flag picks its group over the GPU group; RuneLite's own defaults stand for missing keys; the refresh rate and the
+ * renderer are asked on every read; a failed read answers {@code SettingsView.unknown}; and a read never throws.
  *
- * <p>The GPU plugin and FPS Control are the client's real classes; 117 HD, a Hub plugin that is not on the class
- * path, is a class made here with its exact name, {@code rs117.hd.HdPlugin}.
- *
- * <p>Choice: 117 HD's stand-in is made with ByteBuddy, which Mockito already brings; no file outside the lot is added.
+ * <p>Choice: the flag key of FPS Control is proved against the client's own descriptor, so a client that renames it
+ * fails here; 117 HD, a Hub plugin that is not on the class path, has its two keys written out.
+ * <p>Choice: a flag that was never stored reads as RuneLite's own default for that plugin: FPS Control and a Hub
+ * plugin are off.
  */
 public class SettingsReaderTest
 {
-	private static final int HEAP = 768;
 	private static final String VERSION = "1.12.38";
 
 	private final Map<String, String> stored = new HashMap<>();
 	private final List<String> groupsRead = Collections.synchronizedList(new ArrayList<>());
-	private final Set<Plugin> active = new HashSet<>();
-	private final List<Plugin> installed = new ArrayList<>();
+	/** What {@code Client#isGpu()} answers: a GPU renderer is on, unless a test says otherwise. */
+	private final AtomicBoolean gpuOn = new AtomicBoolean(true);
 	private ConfigManager config;
-	private PluginManager plugins;
-	private Plugin gpu;
-	private Plugin fps;
-	private Plugin hd;
 
 	@Before
-	public void setUp() throws Exception
+	public void setUp()
 	{
 		config = mock(ConfigManager.class);
 		when(config.getConfiguration(anyString(), anyString())).thenAnswer(i ->
@@ -70,31 +62,28 @@ public class SettingsReaderTest
 			groupsRead.add(i.getArgument(0));
 			return stored.get(i.getArgument(0) + "." + i.getArgument(1));
 		});
-		plugins = mock(PluginManager.class);
-		when(plugins.getPlugins()).thenReturn(installed);
-		when(plugins.isPluginActive(any())).thenAnswer(i -> active.contains(i.<Plugin>getArgument(0)));
-		gpu = new GpuPlugin();
-		fps = new FpsPlugin();
-		hd = hdPlugin();
-		installed.addAll(Arrays.asList(new Plugin()
-		{
-		}, gpu, fps, hd));
+		gpuOn.set(true);
 	}
 
+	/** A plugin is on when its flag says "true": FPS Control's flag is the client's own key and default. */
 	@Test
-	public void theClassNamesAreTheRealPlugins()
+	public void theFlagKeysAndDefaultsAreWhatRuneLiteStores()
 	{
-		assertEquals(GpuPlugin.class.getName(), SettingsReader.GPU_PLUGIN);
-		assertEquals(FpsPlugin.class.getName(), SettingsReader.FPS_PLUGIN);
-		assertEquals("117 HD's class at its Hub pin (contract, the API list)", "rs117.hd.HdPlugin",
-			SettingsReader.HD_PLUGIN);
-		assertEquals(SettingsReader.HD_PLUGIN, hd.getClass().getName());
+		assertEquals("runelite", SettingsReader.FLAG_GROUP);
+		assertEquals(keyOf(FpsPlugin.class), SettingsReader.FPS_FLAG);
+		assertEquals("117 HD's class is rs117.hd.HdPlugin: its simple name, lower case", "hdplugin",
+			SettingsReader.HD_FLAG);
+		assertEquals("and its config group, read too", "hd", SettingsReader.HD_FLAG_ALT);
+		assertFalse("FPS Control is off by default", FpsPlugin.class.getAnnotation(PluginDescriptor.class)
+			.enabledByDefault());
 	}
 
 	/** C10: a setting stays stored when its plugin is off, and an off plugin caps nothing. */
 	@Test
-	public void inactivePluginIsNotRead()
+	public void aPluginThatIsOffIsNotRead()
 	{
+		gpuOn.set(false);
+		stored.put("runelite.fpsplugin", "false");
 		stored.put("fpscontrol.limitFps", "true");
 		stored.put("fpscontrol.maxFps", "20");
 		stored.put("fpscontrol.limitFpsUnfocused", "true");
@@ -106,7 +95,7 @@ public class SettingsReaderTest
 		stored.put("hd.fpsTarget", "30");
 
 		final SettingsView v = reader().read();
-		assertEquals("installed but off: the client's own renderer", Renderer.CPU, v.renderer);
+		assertEquals("no GPU renderer: the client's own renderer", Renderer.CPU, v.renderer);
 		assertFalse(v.fpsControlActive);
 		assertFalse(v.limitFps);
 		assertEquals(0, v.maxFps);
@@ -118,9 +107,10 @@ public class SettingsReaderTest
 		assertEquals("the stored limits cap nothing", CapSource.CLIENT_50, v.capSource(true));
 		assertEquals(CapSource.CLIENT_50, v.capSource(false));
 		assertEquals(50, v.capFps(true));
-		assertTrue("no group of an off plugin is read: " + groupsRead, groupsRead.isEmpty());
+		assertFalse("no group of an off plugin is read: " + groupsRead,
+			groupsRead.contains("gpu") || groupsRead.contains("hd") || groupsRead.contains("fpscontrol"));
 
-		active.add(fps);
+		stored.put("runelite.fpsplugin", "true");
 		final SettingsView on = reader().read();
 		assertTrue(on.fpsControlActive);
 		assertEquals("switched on, the same stored limit counts", 20, on.capFps(true));
@@ -129,11 +119,68 @@ public class SettingsReaderTest
 			groupsRead.contains("gpu") || groupsRead.contains("hd"));
 	}
 
+	/**
+	 * With a GPU renderer on, 117 HD on by the flag of its config group alone, or by its class's alone, reads as
+	 * 117 HD.
+	 */
+	@Test
+	public void hdIsOnByEitherFlag()
+	{
+		stored.put("runelite.hd", "true");
+		assertEquals("\"hd\" true, \"hdplugin\" absent", Renderer.HD, reader().read().renderer);
+
+		stored.remove("runelite.hd");
+		stored.put("runelite.hdplugin", "true");
+		assertEquals("\"hdplugin\" true, \"hd\" absent", Renderer.HD, reader().read().renderer);
+
+		stored.put("runelite.hdplugin", "false");
+		stored.put("runelite.hd", "true");
+		assertEquals("either one", Renderer.HD, reader().read().renderer);
+
+		stored.put("runelite.hd", "false");
+		assertEquals("both off: a GPU renderer that is not 117 HD is the GPU plugin", Renderer.GPU,
+			reader().read().renderer);
+	}
+
+	/** isGpu true with no 117 HD flag is the GPU plugin; isGpu false is the CPU renderer whatever the flags say. */
+	@Test
+	public void gpuIsOnByTheClientAndNotOnIsTheCpuRenderer()
+	{
+		assertEquals("isGpu true, no 117 HD flag", Renderer.GPU, reader().read().renderer);
+		stored.put("runelite.hdplugin", "false");
+		stored.put("runelite.hd", "false");
+		assertEquals("isGpu true, the 117 HD flags off", Renderer.GPU, reader().read().renderer);
+
+		gpuOn.set(false);
+		assertEquals("isGpu false", Renderer.CPU, reader().read().renderer);
+		stored.put("runelite.hdplugin", "true");
+		stored.put("runelite.hd", "true");
+		stored.put("runelite.gpuplugin", "true");
+		assertEquals("isGpu false is the CPU renderer even when the flags say 117 HD and GPU", Renderer.CPU,
+			reader().read().renderer);
+	}
+
+	/** A flag that was never stored is RuneLite's own default: FPS Control and 117 HD off. */
+	@Test
+	public void aFlagNeverStoredIsTheDefaultOfThatPlugin()
+	{
+		stored.clear();
+		final SettingsView v = reader().read();
+		assertEquals("a GPU client whose 117 HD flag was never stored runs the GPU plugin", Renderer.GPU,
+			v.renderer);
+		assertFalse("FPS Control is off until it is switched on", v.fpsControlActive);
+		stored.put("fpscontrol.limitFps", "true");
+		stored.put("fpscontrol.maxFps", "30");
+		assertFalse("and its stored limit caps nothing", reader().read().fpsControlActive);
+
+		stored.put("runelite.hdplugin", "true");
+		assertEquals("117 HD wins the moment its flag is stored", Renderer.HD, reader().read().renderer);
+	}
+
 	@Test
 	public void hdWinsOverGpu()
 	{
-		active.add(gpu);
-		active.add(hd);
+		stored.put("runelite.hd", "true");
 		stored.put("gpu.unlockFps", "true");
 		stored.put("gpu.vsyncMode", "OFF");
 		stored.put("gpu.fpsTarget", "144");
@@ -161,8 +208,7 @@ public class SettingsReaderTest
 	@Test
 	public void defaultsWhenKeysAreMissing()
 	{
-		active.add(gpu);
-		active.add(fps);
+		stored.put("runelite.fpsplugin", "true");
 		final SettingsView g = reader().read();
 		assertEquals(Renderer.GPU, g.renderer);
 		assertTrue("gpu unlockFps", g.unlockFps);
@@ -179,8 +225,8 @@ public class SettingsReaderTest
 		assertEquals("a default GPU player is at the target of 60 (C11)", 60, g.capFps(true));
 		assertEquals(CapSource.GPU_TARGET, g.capSource(true));
 
-		active.clear();
-		active.add(hd);
+		stored.put("runelite.fpsplugin", "false");
+		stored.put("runelite.hd", "true");
 		final SettingsView h = reader().read();
 		assertEquals(Renderer.HD, h.renderer);
 		assertFalse("hd unlockFps", h.unlockFps);
@@ -195,8 +241,7 @@ public class SettingsReaderTest
 	@Test
 	public void storedValuesAreRead()
 	{
-		active.add(gpu);
-		active.add(fps);
+		stored.put("runelite.fpsplugin", "true");
 		stored.put("gpu.unlockFps", "false");
 		stored.put("gpu.vsyncMode", "ON");
 		stored.put("gpu.fpsTarget", "90");
@@ -227,7 +272,8 @@ public class SettingsReaderTest
 	@Test
 	public void theCpuRendererReadsNoRendererKey()
 	{
-		installed.remove(hd);
+		gpuOn.set(false);
+		stored.put("runelite.hd", "true");
 		stored.put("gpu.drawDistance", "90");
 		stored.put("gpu.antiAliasingMode", "MSAA_16");
 		final SettingsView v = reader().read();
@@ -236,47 +282,23 @@ public class SettingsReaderTest
 		assertEquals("", v.vsyncMode);
 		assertEquals(0, v.fpsTarget);
 		assertEquals("contract 6.6: on CPU the key is not read (0)", 0, v.drawDistance);
-		assertEquals("and the anti-aliasing is \"\"", "", v.antiAliasing);
+		assertEquals("and the anti-aliasing is empty", "", v.antiAliasing);
 		assertEquals(0, v.expandedMapLoading);
-		assertTrue(groupsRead.isEmpty());
-
-		installed.clear();
-		assertEquals("no plugin installed at all", Renderer.CPU, reader().read().renderer);
-	}
-
-	@Test
-	public void memorySourceIsAskedOnEveryRead()
-	{
-		final AtomicInteger asked = new AtomicInteger();
-		final MemorySource[] now = {MemorySource.MANAGEMENT};
-		final SettingsReader r = new SettingsReader(config, plugins, () -> 60, () ->
-		{
-			asked.incrementAndGet();
-			return now[0];
-		}, HEAP, Os.WINDOWS, VERSION);
-		assertEquals(MemorySource.MANAGEMENT, r.read().memorySource);
-		now[0] = MemorySource.RUNTIME;
-		assertEquals("a systemStats swap is seen at the next read", MemorySource.RUNTIME, r.read().memorySource);
-		now[0] = MemorySource.MANAGEMENT;
-		assertEquals(MemorySource.MANAGEMENT, r.read().memorySource);
-		assertEquals(3, asked.get());
-		now[0] = null;
-		assertEquals("a null source is the safe side", MemorySource.RUNTIME, r.read().memorySource);
-		assertEquals(4, asked.get());
+		assertFalse("no renderer group was read: " + groupsRead, groupsRead.contains("gpu")
+			|| groupsRead.contains("hd"));
 	}
 
 	@Test
 	public void refreshRateIsAskedOnEveryRead()
 	{
-		active.add(gpu);
 		stored.put("gpu.vsyncMode", "ON");
 		final AtomicInteger asked = new AtomicInteger();
 		final int[] hz = {165};
-		final SettingsReader r = new SettingsReader(config, plugins, () ->
+		final SettingsReader r = new SettingsReader(config, gpuOn::get, () ->
 		{
 			asked.incrementAndGet();
 			return hz[0];
-		}, () -> MemorySource.MANAGEMENT, HEAP, Os.WINDOWS, VERSION);
+		}, Os.WINDOWS, VERSION);
 		final SettingsView first = r.read();
 		assertEquals(165, first.refreshHz);
 		assertEquals("V-Sync on the 165 Hz screen", 165, first.capFps(true));
@@ -287,11 +309,30 @@ public class SettingsReaderTest
 		assertEquals(2, asked.get());
 	}
 
+	/** The renderer is the client's answer of now: asked on every read, so a switch shows at the next one. */
+	@Test
+	public void theRendererIsAskedOnEveryRead()
+	{
+		final AtomicInteger asked = new AtomicInteger();
+		final BooleanSupplier isGpu = () ->
+		{
+			asked.incrementAndGet();
+			return gpuOn.get();
+		};
+		final SettingsReader r = new SettingsReader(config, isGpu, () -> 60, Os.WINDOWS, VERSION);
+		assertEquals(Renderer.GPU, r.read().renderer);
+		gpuOn.set(false);
+		assertEquals("the renderer went to the CPU one", Renderer.CPU, r.read().renderer);
+		gpuOn.set(true);
+		stored.put("runelite.hd", "true");
+		assertEquals("and back, with 117 HD on", Renderer.HD, r.read().renderer);
+		assertEquals(3, asked.get());
+	}
+
 	@Test
 	public void valuesParseAsRuneLiteParsesThem()
 	{
-		active.add(gpu);
-		active.add(fps);
+		stored.put("runelite.fpsplugin", "true");
 		stored.put("gpu.unlockFps", "TRUE");
 		stored.put("gpu.fpsTarget", "sixty");
 		stored.put("gpu.drawDistance", " 40");
@@ -310,147 +351,104 @@ public class SettingsReaderTest
 	}
 
 	@Test
+	public void aFlagThatIsNotTrueIsOff()
+	{
+		stored.put("runelite.hd", "yes");
+		assertEquals("Boolean.parseBoolean: only true is true", Renderer.GPU, reader().read().renderer);
+		stored.put("runelite.hd", "TRUE");
+		assertEquals(Renderer.HD, reader().read().renderer);
+	}
+
+	@Test
 	public void theGivenNumbersReachTheView()
 	{
-		final SettingsView v = new SettingsReader(config, plugins, () -> 144, () -> MemorySource.RUNTIME, 1024,
-			Os.LINUX, "1.13.0").read();
-		assertEquals(1024, v.heapMaxMb);
+		final SettingsView v = new SettingsReader(config, gpuOn::get, () -> 144, Os.LINUX, "1.13.0").read();
 		assertEquals(Os.LINUX, v.os);
 		assertEquals("1.13.0", v.clientVersion);
 		assertEquals(144, v.refreshHz);
-		assertEquals(MemorySource.RUNTIME, v.memorySource);
 	}
 
 	@Test
 	public void aThrowingSupplierDoesNotLoseTheRest()
 	{
-		active.add(gpu);
-		final SettingsView noRefresh = new SettingsReader(config, plugins, () ->
+		final SettingsView noRefresh = new SettingsReader(config, gpuOn::get, () ->
 		{
 			throw new IllegalStateException("no screen");
-		}, () -> MemorySource.MANAGEMENT, HEAP, Os.WINDOWS, VERSION).read();
+		}, Os.WINDOWS, VERSION).read();
 		assertEquals("the refresh rate is unknown", 0, noRefresh.refreshHz);
 		assertEquals("the rest is read", Renderer.GPU, noRefresh.renderer);
-		assertEquals(MemorySource.MANAGEMENT, noRefresh.memorySource);
-
-		final SettingsView noSource = new SettingsReader(config, plugins, () -> 60, () ->
-		{
-			throw new IllegalStateException("probe swapping");
-		}, HEAP, Os.WINDOWS, VERSION).read();
-		assertEquals("a supplier that throws is the safe side", MemorySource.RUNTIME, noSource.memorySource);
-		assertEquals(Renderer.GPU, noSource.renderer);
-		assertEquals(60, noSource.refreshHz);
 	}
 
 	@Test
-	public void aFailedReadKeepsTheMemorySource()
+	public void aFailedReadIsUnknown()
 	{
 		final ConfigManager broken = mock(ConfigManager.class);
 		when(broken.getConfiguration(anyString(), anyString())).thenThrow(new IllegalStateException("broken"));
-		active.add(gpu);
 
-		final SettingsView runtime = new SettingsReader(broken, plugins, () -> 60, () -> MemorySource.RUNTIME, HEAP,
-			Os.WINDOWS, VERSION).read();
-		assertEquals("the settings are unknown", Renderer.UNKNOWN, runtime.renderer);
-		assertEquals(MemorySource.RUNTIME, runtime.memorySource);
-		assertEquals(HEAP, runtime.heapMaxMb);
-		assertEquals(Os.WINDOWS, runtime.os);
+		final SettingsView v = new SettingsReader(broken, gpuOn::get, () -> 60, Os.WINDOWS, VERSION).read();
+		assertEquals("the settings are unknown", Renderer.UNKNOWN, v.renderer);
+		assertEquals(Os.WINDOWS, v.os);
+		assertEquals("", v.clientVersion);
 
-		final SettingsView management = new SettingsReader(broken, plugins, () -> 60, () -> MemorySource.MANAGEMENT,
-			HEAP, Os.WINDOWS, VERSION).read();
-		assertEquals(Renderer.UNKNOWN, management.renderer);
-		assertEquals("the supplier's answer, not a fixed one", MemorySource.MANAGEMENT, management.memorySource);
-
-		final SettingsView thrown = new SettingsReader(broken, plugins, () -> 60, () ->
+		final SettingsView noAnswer = new SettingsReader(config, () ->
 		{
-			throw new IllegalStateException();
-		}, HEAP, Os.WINDOWS, VERSION).read();
-		assertEquals(Renderer.UNKNOWN, thrown.renderer);
-		assertEquals("the supplier itself threw: RUNTIME", MemorySource.RUNTIME, thrown.memorySource);
+			throw new IllegalStateException("no answer");
+		}, () -> 60, Os.WINDOWS, VERSION).read();
+		assertEquals("a renderer supplier that throws fails the read as a whole", Renderer.UNKNOWN,
+			noAnswer.renderer);
 	}
 
 	@Test
 	public void neverThrows()
 	{
-		active.add(gpu);
-		active.add(fps);
 		final List<Runnable> breakages = new ArrayList<>();
 		breakages.add(() -> when(config.getConfiguration(anyString(), anyString()))
 			.thenThrow(new NoClassDefFoundError("net/runelite/client/config/ConfigData")));
-		breakages.add(() -> when(plugins.getPlugins()).thenThrow(new IllegalStateException()));
-		breakages.add(() -> when(plugins.getPlugins()).thenReturn(null));
-		breakages.add(() -> when(plugins.getPlugins()).thenReturn(Arrays.asList(null, gpu, null)));
-		breakages.add(() -> when(plugins.isPluginActive(any())).thenThrow(new NoSuchMethodError("isPluginActive")));
-		breakages.add(() -> when(plugins.isPluginActive(any())).thenThrow(new RuntimeException()));
+		breakages.add(() -> when(config.getConfiguration(anyString(), anyString())).thenThrow(new RuntimeException()));
+		breakages.add(() -> when(config.getConfiguration(anyString(), anyString())).thenReturn(null));
+		breakages.add(() -> when(config.getConfiguration(anyString(), anyString())).thenReturn("not a number"));
 		for (Runnable breakage : breakages)
 		{
-			setUpQuietly();
-			active.add(gpu);
+			setUp();
 			breakage.run();
 			final SettingsView v = reader().read();
 			assertNotNull(v);
 			assertNotNull(v.renderer);
 		}
-		final Supplier<MemorySource> source = () ->
-		{
-			throw new ExceptionInInitializerError();
-		};
 		final IntSupplier hz = () ->
 		{
 			throw new UnsatisfiedLinkError();
 		};
-		assertNotNull(new SettingsReader(null, null, hz, source, HEAP, Os.OTHER, null).read());
-		assertNotNull(new SettingsReader(null, null, null, null, 0, null, null).read());
+		assertNotNull(new SettingsReader(null, gpuOn::get, hz, Os.OTHER, null).read());
+		assertNotNull(new SettingsReader(null, null, null, null, null).read());
+	}
+
+	/** The reader is made of a config manager, the renderer, a refresh rate, the system and a version: no plugin. */
+	@Test
+	public void noPluginManagerAndNoPluginObject()
+	{
+		final Constructor<?>[] constructors = SettingsReader.class.getConstructors();
+		assertEquals(1, constructors.length);
+		assertEquals(Arrays.asList(ConfigManager.class, BooleanSupplier.class, IntSupplier.class, Os.class,
+			String.class), Arrays.asList(constructors[0].getParameterTypes()));
+		for (Field f : SettingsReader.class.getDeclaredFields())
+		{
+			assertFalse(f.getName() + " holds a plugin", Plugin.class.isAssignableFrom(f.getType()));
+			assertFalse(f.getName() + " is a plugin manager", f.getType().getSimpleName().equals("PluginManager"));
+		}
 	}
 
 	// ---------------------------------------------------------------- helpers
 
 	private SettingsReader reader()
 	{
-		return new SettingsReader(config, plugins, () -> 60, () -> MemorySource.MANAGEMENT, HEAP, Os.WINDOWS, VERSION);
+		return new SettingsReader(config, gpuOn::get, () -> 60, Os.WINDOWS, VERSION);
 	}
 
-	private void setUpQuietly()
+	/** The key RuneLite stores a plugin's flag under: its configName, else its class's simple name, lower case. */
+	private static String keyOf(Class<? extends Plugin> plugin)
 	{
-		try
-		{
-			stored.clear();
-			groupsRead.clear();
-			active.clear();
-			installed.clear();
-			setUp();
-		}
-		catch (Exception e)
-		{
-			throw new AssertionError(e);
-		}
-	}
-
-	private static Class<? extends Plugin> hdClass;
-
-	/** A plugin whose class is named {@code rs117.hd.HdPlugin}, as 117 HD's is; made once. */
-	private static synchronized Plugin hdPlugin() throws ReflectiveOperationException
-	{
-		if (hdClass == null)
-		{
-			hdClass = new ByteBuddy()
-				.subclass(Plugin.class)
-				.name(SettingsReader.HD_PLUGIN)
-				.make()
-				.load(SettingsReaderTest.class.getClassLoader(), ClassLoadingStrategy.Default.WRAPPER)
-				.getLoaded();
-		}
-		return hdClass.getDeclaredConstructor().newInstance();
-	}
-
-	@Test
-	public void theTestsOwnPluginsAreWhatTheyClaim()
-	{
-		assertTrue(installed.contains(gpu) && installed.contains(fps) && installed.contains(hd));
-		final Collection<Plugin> seen = plugins.getPlugins();
-		assertEquals(4, seen.size());
-		active.add(hd);
-		assertTrue(plugins.isPluginActive(hd));
-		assertFalse(plugins.isPluginActive(gpu));
+		final PluginDescriptor d = plugin.getAnnotation(PluginDescriptor.class);
+		return (d.configName().isEmpty() ? plugin.getSimpleName() : d.configName()).toLowerCase();
 	}
 }

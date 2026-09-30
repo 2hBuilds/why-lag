@@ -33,8 +33,8 @@ public class LagEngineTest
 	private FakeJudge judge;
 	private FakeSnapshots snapshots;
 	private LagEngine engine;
-	private SettingsView management;
-	private SettingsView runtime;
+	private SettingsView settings;
+	private SettingsView changed;
 
 	@Before
 	public void setUp()
@@ -44,8 +44,8 @@ public class LagEngineTest
 		judge = new FakeJudge();
 		snapshots = new FakeSnapshots();
 		engine = new LagEngine(session, detector, judge, snapshots);
-		management = SettingsView.unknown(768, Os.WINDOWS, MemorySource.MANAGEMENT);
-		runtime = SettingsView.unknown(768, Os.WINDOWS, MemorySource.RUNTIME);
+		settings = SettingsView.unknown(Os.WINDOWS);
+		changed = SettingsView.unknown(Os.WINDOWS);
 	}
 
 	private static long at(long ms)
@@ -55,10 +55,10 @@ public class LagEngineTest
 
 	private void step(long ms)
 	{
-		engine.step(at(ms), START_WALL_MS + ms, management);
+		engine.step(at(ms), START_WALL_MS + ms, settings);
 	}
 
-	/** A host sample with the steady readings: heap 400, process CPU 40, PC 20. */
+	/** A host sample with the steady readings. */
 	private void host(long ms, long rttMicros, long sent)
 	{
 		host(ms, rttMicros, sent, 0);
@@ -67,7 +67,7 @@ public class LagEngineTest
 	/** The same, with the socket's re-sent counter. */
 	private void host(long ms, long rttMicros, long sent, long resent)
 	{
-		engine.host(at(ms), rttMicros, sent, resent, NoData.NONE, 400, 40, 20);
+		engine.host(at(ms), rttMicros, sent, resent, NoData.NONE);
 	}
 
 	private static Verdict verdict(Cause cause, long eventId)
@@ -79,8 +79,7 @@ public class LagEngineTest
 	private static LagEvent event(long id, long startSec, long endSec, boolean open)
 	{
 		return new LagEvent(id, startSec, endSec, START_WALL_MS + startSec * 1000, Trigger.FRAME_GAP.bit(),
-			Trigger.FRAME_GAP, 416, 0, 0, 0, 50, 400, 600, 600, 0, 40, 40, -1, 0, 0, 0, 400, 768, 20, 40, open,
-			false, null);
+			Trigger.FRAME_GAP, 416, 0, 0, 0, 50, 400, 600, 600, 0, 40, 40, -1, 0, 0, open, false, null);
 	}
 
 	// ---------------------------------------------------------------- the verdict and its listeners
@@ -94,9 +93,7 @@ public class LagEngineTest
 		assertEquals(0, judge.lastNowSec);
 		assertSame(session, judge.lastSession);
 		assertEquals(Renderer.UNKNOWN, judge.lastSettings.renderer);
-		assertEquals(0, judge.lastSettings.heapMaxMb);
 		assertEquals(Os.OTHER, judge.lastSettings.os);
-		assertEquals(MemorySource.RUNTIME, judge.lastSettings.memorySource);
 		assertNull(engine.openEvent());
 		assertSame(session, engine.session());
 		assertNotNull(engine.selfTimer());
@@ -106,7 +103,6 @@ public class LagEngineTest
 		assertEquals(0, snapshots.lastNowSec);
 		assertSame(engine.verdict(), snapshots.lastShown);
 		assertNotNull(snapshots.lastSettings);
-		assertEquals(MemorySource.RUNTIME, snapshots.lastSettings.memorySource);
 		assertEquals("", snapshots.lastFooter);
 
 		// a judge that answers nothing still leaves a verdict: the measuring state
@@ -124,7 +120,7 @@ public class LagEngineTest
 		engine.gameState(at(0), State.LOGGED_IN);
 		for (long ms = 0; ms <= 3000; ms += 20)
 		{
-			engine.frame(at(ms), (int) (ms / 20), -1);
+			engine.frame(at(ms), (int) (ms / 20));
 		}
 		engine.tick(at(600), 30);
 		host(3010, RTT_40_MS, 1000);
@@ -214,7 +210,7 @@ public class LagEngineTest
 			engine.focus(true);
 			for (long ms = 0; ms <= 2000; ms += 20)
 			{
-				engine.frame(at(ms), (int) (ms / 20), -1);
+				engine.frame(at(ms), (int) (ms / 20));
 			}
 			engine.tick(at(600), 30);
 			clientDone.countDown();
@@ -246,97 +242,6 @@ public class LagEngineTest
 		assertEquals(1, snapshots.builds);
 	}
 
-	@Test(timeout = 60_000)
-	public void gcFromAnotherThreadIsSeen() throws InterruptedException
-	{
-		final Thread notifier = new Thread(() -> engine.gcPause(1500, 120, 300), "test-notification");
-		notifier.start();
-		notifier.join(TimeUnit.SECONDS.toMillis(WAIT_S));
-		assertFalse(notifier.isAlive());
-		assertEquals(0, session.gcs.head());
-		assertEquals(1500L, session.gcs.startMs(0));
-		assertEquals(120, session.gcs.durationMs(0));
-		assertEquals(300, session.gcs.heapAfterMb(0));
-		assertEquals(120, session.gcs.longestPauseMs(1000, 1999));
-		assertEquals(300, session.gcs.heapAfterAt(2000));
-	}
-
-	// ---------------------------------------------------------------- the heap fallback
-
-	@Test
-	public void inferredCollectionOnTheFallback()
-	{
-		engine.step(at(500), START_WALL_MS + 500, runtime);
-		engine.host(at(1010), RTT_40_MS, 0, 0, NoData.NONE, 500, -1, -1);
-		engine.host(at(2010), RTT_40_MS, 0, 0, NoData.NONE, 520, -1, -1);
-		assertEquals("the heap rose: nothing to infer", -1, session.gcs.head());
-		engine.host(at(3010), RTT_40_MS, 0, 0, NoData.NONE, 520 - Thresholds.HEAP_DROP_MB + 1, -1, -1);
-		assertEquals("a fall of one MB under HEAP_DROP_MB", -1, session.gcs.head());
-		engine.host(at(4010), RTT_40_MS, 0, 0, NoData.NONE, 600, -1, -1);
-		engine.host(at(5010), RTT_40_MS, 0, 0, NoData.NONE, 600 - Thresholds.HEAP_DROP_MB, -1, -1);
-		assertEquals(0, session.gcs.head());
-		assertEquals("inferred: it has no length", -1, session.gcs.durationMs(0));
-		assertEquals(600 - Thresholds.HEAP_DROP_MB, session.gcs.heapAfterMb(0));
-		// the sample of 5.010 s fills second 4, whose heap shows the fall: the row sits at the START of second 4,
-		// where Trace.gcInferred(4, ...) puts one (contract 3.12)
-		assertEquals(600, session.seconds.heapUsedMb(3));
-		assertEquals(600 - Thresholds.HEAP_DROP_MB, session.seconds.heapUsedMb(4));
-		assertEquals("the start of the second the sample fills", 4000L, session.gcs.startMs(0));
-		assertTrue(session.gcs.inferredIn(4000, 4999));
-		assertFalse("not in the second the sample was taken in", session.gcs.inferredIn(5000, 5999));
-		assertFalse(session.gcs.inferredIn(3000, 3999));
-		assertEquals(-1, session.gcs.heapAfterAt(3999));
-		assertEquals(600 - Thresholds.HEAP_DROP_MB, session.gcs.heapAfterAt(4000));
-
-		// on MANAGEMENT the collections come from the listener: a fall infers nothing
-		engine.step(at(5500), START_WALL_MS + 5500, management);
-		engine.host(at(6010), RTT_40_MS, 0, 0, NoData.NONE, 700, -1, -1);
-		engine.host(at(7010), RTT_40_MS, 0, 0, NoData.NONE, 300, -1, -1);
-		assertEquals(0, session.gcs.head());
-		// and the source of the LAST settings counts
-		engine.step(at(7500), START_WALL_MS + 7500, runtime);
-		engine.host(at(8010), RTT_40_MS, 0, 0, NoData.NONE, 100, -1, -1);
-		assertEquals(1, session.gcs.head());
-		assertEquals(100, session.gcs.heapAfterMb(1));
-		assertEquals("the sample of 8.010 s fills second 7", 7000L, session.gcs.startMs(1));
-	}
-
-	@Test
-	public void anInferredCollectionSitsAtTheFirstSecondThatShowsTheFall()
-	{
-		engine.step(at(500), START_WALL_MS + 500, runtime);
-		engine.host(at(4010), RTT_40_MS, 0, 0, NoData.NONE, 600, -1, -1);
-		// the sample of 5.010 s was skipped: the one of 6.010 s fills seconds 4 and 5, both with its heap
-		engine.host(at(6010), RTT_40_MS, 0, 0, NoData.NONE, 500, -1, -1);
-		assertEquals(5, session.seconds.hostHead());
-		assertEquals(500, session.seconds.heapUsedMb(4));
-		assertEquals(500, session.seconds.heapUsedMb(5));
-		assertEquals(0, session.gcs.head());
-		assertEquals("a short hole: the first second that shows the fall", 4000L, session.gcs.startMs(0));
-		assertEquals(500, session.gcs.heapAfterAt(4000));
-
-		// a long hole: its fillers carry no heap, so the fall shows first in the sample's own second
-		engine.host(at(7010), RTT_40_MS, 0, 0, NoData.NONE, 600, -1, -1);
-		assertEquals("the heap rose: nothing to infer", 0, session.gcs.head());
-		final long sampleSec = 6 + Thresholds.HOST_FILL_S + 2;
-		engine.host(at((sampleSec + 1) * 1000 + 10), RTT_40_MS, 0, 0, NoData.NONE, 400, -1, -1);
-		assertEquals(-1, session.seconds.heapUsedMb(sampleSec - 1));
-		assertEquals(400, session.seconds.heapUsedMb(sampleSec));
-		assertEquals(1, session.gcs.head());
-		assertEquals(sampleSec * 1000, session.gcs.startMs(1));
-		assertEquals(400, session.gcs.heapAfterMb(1));
-	}
-
-	@Test
-	public void nothingIsInferredBeforeTheFirstStep()
-	{
-		engine.host(at(1010), RTT_40_MS, 0, 0, NoData.NONE, 700, -1, -1);
-		engine.host(at(2010), RTT_40_MS, 0, 0, NoData.NONE, 300, -1, -1);
-		assertEquals(1, session.seconds.hostHead());
-		assertEquals(300, session.seconds.heapUsedMb(1));
-		assertEquals("no settings yet: the memory source is not known", -1, session.gcs.head());
-	}
-
 	// ---------------------------------------------------------------- the log and the open event
 
 	@Test
@@ -364,7 +269,7 @@ public class LagEngineTest
 		assertEquals(1, session.events.sessionCount(Group.FRAME_RATE));
 		assertSame(held, session.events.last());
 		assertSame(held, session.events.byId(0));
-		assertSame("the judge was handed the step's settings", management, judge.lastEventSettings);
+		assertSame("the judge was handed the step's settings", settings, judge.lastEventSettings);
 	}
 
 	@Test
@@ -475,7 +380,7 @@ public class LagEngineTest
 			{
 				engine.tick(at(ms), (int) (ms / 20));
 			}
-			engine.frame(at(ms), (int) (ms / 20), -1);
+			engine.frame(at(ms), (int) (ms / 20));
 			if (ms % 1000 == 0 && ms > 0)
 			{
 				host(ms + 10, RTT_40_MS, ms * 3);
@@ -485,7 +390,6 @@ public class LagEngineTest
 		engine.gameState(at(5100), State.HOPPING);
 		engine.world(at(5200), 302);
 		engine.gameState(at(5900), State.LOGGED_IN);
-		engine.gcPause(5300, 40, 250);
 		host(6010, RTT_40_MS, 20_000);
 		step(6012);
 		engine.snapshot(10, START_WALL_MS + 6100);
@@ -590,7 +494,7 @@ public class LagEngineTest
 		step(7300);
 		assertEquals("the judge is handed the clock's second", 7, judge.lastNowSec);
 		assertEquals(START_WALL_MS + 7300, judge.lastWallMs);
-		assertSame(management, judge.lastSettings);
+		assertSame(settings, judge.lastSettings);
 		assertEquals(-1, detector.lastThroughSec);
 
 		final PanelSnapshot built = engine.snapshot(60, START_WALL_MS + 9_900);
@@ -600,12 +504,12 @@ public class LagEngineTest
 		assertEquals(START_WALL_MS + 9_900, snapshots.lastWallMs);
 		assertSame(session, snapshots.lastSession);
 		assertSame(engine.verdict(), snapshots.lastShown);
-		assertSame("the settings of the last step", management, snapshots.lastSettings);
+		assertSame("the settings of the last step", settings, snapshots.lastSettings);
 
-		engine.step(at(12_999), START_WALL_MS + 12_999, runtime);
+		engine.step(at(12_999), START_WALL_MS + 12_999, changed);
 		engine.snapshot(1, START_WALL_MS + 13_500);
 		assertEquals(12, snapshots.lastNowSec);
-		assertSame(runtime, snapshots.lastSettings);
+		assertSame(changed, snapshots.lastSettings);
 	}
 
 	@Test
@@ -613,13 +517,13 @@ public class LagEngineTest
 	{
 		for (long ms = 0; ms <= 6000; ms += 20)
 		{
-			engine.frame(at(ms), (int) (ms / 20), -1);
+			engine.frame(at(ms), (int) (ms / 20));
 		}
 		host(4010, RTT_40_MS, 0);
 		step(6020);
 		assertEquals("the frame head is 5, the host head 3", 3, detector.lastThroughSec);
 		assertSame(session, detector.lastSession);
-		assertSame(management, detector.lastSettings);
+		assertSame(settings, detector.lastSettings);
 	}
 
 	@Test
@@ -628,7 +532,7 @@ public class LagEngineTest
 		engine.snapshot(10, START_WALL_MS);
 		assertEquals("", snapshots.lastFooter);
 		engine.selfTimer().on(true);
-		engine.frame(at(0), 0, -1);
+		engine.frame(at(0), 0);
 		engine.tick(at(600), 30);
 		step(1000);
 		engine.snapshot(10, START_WALL_MS);
@@ -644,7 +548,7 @@ public class LagEngineTest
 	@Test
 	public void aSampleFillsTheSecondBeforeIt()
 	{
-		engine.host(at(990), RTT_40_MS, 1000, 0, NoData.NONE, 400, 40, 20);
+		engine.host(at(990), RTT_40_MS, 1000, 0, NoData.NONE);
 		assertEquals("taken in second 0: there is no second before it", -1, session.seconds.hostHead());
 
 		host(1010, RTT_40_MS, 5000);
@@ -659,9 +563,6 @@ public class LagEngineTest
 		assertEquals(47, session.seconds.rttMs(4));
 		assertEquals(0, session.seconds.rttAgeS(4));
 		assertEquals(NoData.NONE, session.seconds.conn(4));
-		assertEquals(400, session.seconds.heapUsedMb(4));
-		assertEquals(40, session.seconds.procCpuPct(4));
-		assertEquals(20, session.seconds.sysCpuPct(4));
 		assertEquals(900, session.seconds.sentUnits(3));
 		assertEquals(40, session.seconds.rttMs(3));
 	}
@@ -674,11 +575,10 @@ public class LagEngineTest
 		assertEquals(4, session.seconds.hostHead());
 		assertEquals(1000, session.seconds.sentUnits(4));
 
-		engine.host(at(5700), 99_000L, 11_400, 0, NoData.NONE, 999, 99, 99);
+		engine.host(at(5700), 99_000L, 11_400, 0, NoData.NONE);
 		assertEquals("one host second", 4, session.seconds.hostHead());
 		assertEquals(1000, session.seconds.sentUnits(4));
 		assertEquals(40, session.seconds.rttMs(4));
-		assertEquals(400, session.seconds.heapUsedMb(4));
 
 		host(6010, RTT_40_MS, 12_000);
 		assertEquals(5, session.seconds.hostHead());
@@ -690,10 +590,10 @@ public class LagEngineTest
 	public void aShortHoleTakesTheReadingsOfTheSampleThatClosesIt()
 	{
 		host(4010, RTT_40_MS, 4000);
-		engine.host(at(5010), RTT_40_MS, 5000, 0, NoData.NONE, 400, 40, 20);
+		engine.host(at(5010), RTT_40_MS, 5000, 0, NoData.NONE);
 		assertEquals(4, session.seconds.hostHead());
 		// the sample of 6.010 s was skipped
-		engine.host(at(7010), 45_000L, 6200, 30, NoData.NONE, 433, 61, 37);
+		engine.host(at(7010), 45_000L, 6200, 30, NoData.NONE);
 		assertEquals(6, session.seconds.hostHead());
 
 		final SecondRing r = session.seconds;
@@ -702,26 +602,21 @@ public class LagEngineTest
 			assertEquals("second " + sec, 45, r.rttMs(sec));
 			assertEquals(0, r.rttAgeS(sec));
 			assertEquals(NoData.NONE, r.conn(sec));
-			assertEquals(433, r.heapUsedMb(sec));
-			assertEquals(61, r.procCpuPct(sec));
-			assertEquals(37, r.sysCpuPct(sec));
 		}
 		assertEquals("the filled second sent nothing", 0, r.sentUnits(5));
 		assertEquals(0, r.resentUnits(5));
 		assertEquals("the whole difference stays in the sample's own second", 1200, r.sentUnits(6));
 		assertEquals(30, r.resentUnits(6));
 		assertEquals("the second before the hole is as it was", 40, r.rttMs(4));
-		assertEquals(400, r.heapUsedMb(4));
 
 		// a hole of exactly HOST_FILL_S seconds is still filled so
 		final long next = 7 + Thresholds.HOST_FILL_S + 1;
-		engine.host(at(next * 1000 + 10), 52_000L, 9000, 30, NoData.NONE, 450, 50, 30);
+		engine.host(at(next * 1000 + 10), 52_000L, 9000, 30, NoData.NONE);
 		assertEquals(next - 1, r.hostHead());
 		for (long sec = 7; sec < next; sec++)
 		{
 			assertEquals("second " + sec, 52, r.rttMs(sec));
 			assertEquals(NoData.NONE, r.conn(sec));
-			assertEquals(450, r.heapUsedMb(sec));
 		}
 		assertEquals(0, r.sentUnits(7));
 		assertEquals(2800, r.sentUnits(next - 1));
@@ -737,21 +632,17 @@ public class LagEngineTest
 
 		final long hole = Thresholds.HOST_FILL_S + 1;
 		final long sampleSec = 5 + hole;
-		engine.host(at((sampleSec + 1) * 1000 + 10), 45_000L, 9000, 0, NoData.NONE, 433, 61, 37);
+		engine.host(at((sampleSec + 1) * 1000 + 10), 45_000L, 9000, 0, NoData.NONE);
 		assertEquals(sampleSec, r.hostHead());
 		for (long sec = 5; sec < sampleSec; sec++)
 		{
 			assertEquals("second " + sec, NoData.STALE, r.conn(sec));
 			assertEquals(-1, r.rttMs(sec));
 			assertEquals(-1, r.rttAgeS(sec));
-			assertEquals(-1, r.heapUsedMb(sec));
-			assertEquals(-1, r.procCpuPct(sec));
-			assertEquals(-1, r.sysCpuPct(sec));
 			assertEquals(0, r.sentUnits(sec));
 			assertEquals(0, r.resentUnits(sec));
 		}
 		assertEquals("the sample's own second holds its readings", 45, r.rttMs(sampleSec));
-		assertEquals(433, r.heapUsedMb(sampleSec));
 		assertEquals(4000, r.sentUnits(sampleSec));
 		assertEquals(NoData.NONE, r.conn(sampleSec));
 
@@ -762,9 +653,7 @@ public class LagEngineTest
 		for (long sec = 0; sec < 8; sec++)
 		{
 			assertEquals(NoData.STALE, session.seconds.conn(sec));
-			assertEquals(-1, session.seconds.heapUsedMb(sec));
 		}
-		assertEquals(400, session.seconds.heapUsedMb(8));
 	}
 
 	// ---------------------------------------------------------------- the connection
@@ -883,7 +772,7 @@ public class LagEngineTest
 		engine.focus(false);
 		for (long ms = 0; ms <= 2000; ms += 20)
 		{
-			engine.frame(at(ms), (int) (ms / 20), -1);
+			engine.frame(at(ms), (int) (ms / 20));
 		}
 		assertEquals(416, session.seconds.world(1));
 		assertEquals(12, session.seconds.players(1));
@@ -1004,7 +893,7 @@ public class LagEngineTest
 	private static final class FakeSnapshots implements SnapshotSource
 	{
 		final PanelSnapshot answer = new PanelSnapshot(0, ZoneOffset.UTC, 0, null, new Tile[0], 10, 0, 0,
-			new Strip[0], null, null, new int[Group.values().length], 0, 0, -1, -1, null, "");
+			new Strip[0], null, null, new int[Group.values().length], 0, 0, null, "");
 		volatile int builds;
 		long lastNowSec = Long.MIN_VALUE, lastWallMs;
 		int lastRange;

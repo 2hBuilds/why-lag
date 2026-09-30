@@ -13,7 +13,7 @@ import javax.swing.ToolTipManager;
 
 /**
  * Block 8, the session's counts by group (contract 5): RuneScape Small {@link Ui#TEXT}, baseline 12, 11 px between
- * items: "Conn 1", "Frame 1", "Mem 1", "World 1", and "? 1" only while the UNSURE count is above 0 (its tooltip
+ * items: "Conn 1", "Frame 1", "World 1", and "? 1" only while the UNSURE count is above 0 (its tooltip
  * "Can't tell"). A count over 99 prints "99+". When the items are wider than the block (213 px at the least) on one line,
  * the items that do not fit go to a second 16 px line and the block is 32 high. An item is never split and never
  * clipped. The lines are made for the block's own width ({@link Ui#widthOf}) and made again when that changes.
@@ -28,7 +28,7 @@ final class SessionCounts extends JComponent
 	static final int GAP = 11;
 	static final int CAP = 99;
 	static final String UNSURE_TIP = "Can't tell";
-	private static final Group[] ALWAYS = {Group.CONNECTION, Group.FRAME_RATE, Group.MEMORY, Group.WORLD};
+	private static final Group[] ALWAYS = {Group.CONNECTION, Group.FRAME_RATE, Group.WORLD};
 
 	/** Each item: its words, its line (0 or 1) and its x, made for {@link #placedWidth}. */
 	private final List<String> words = new ArrayList<>();

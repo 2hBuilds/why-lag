@@ -25,14 +25,14 @@ public class EventLogTest
 		final EventLog log = new EventLog(Thresholds.EVENTS);
 		for (int i = 0; i < 520; i++)
 		{
-			log.add(closed(i, 10L * i, 10L * i + 2, i % 2 == 0 ? Cause.SLOW_WORLD : Cause.GC_PAUSE));
+			log.add(closed(i, 10L * i, 10L * i + 2, i % 2 == 0 ? Cause.SLOW_WORLD : Cause.CLIENT_BUSY));
 		}
 		assertEquals(500, log.size());
 		assertEquals("the oldest twenty were dropped", 20, log.get(0).id);
 		assertEquals(519, log.get(499).id);
 		assertEquals("dropped events stay counted", 520, log.sessionTotal());
 		assertEquals(260, log.sessionCount(Group.WORLD));
-		assertEquals(260, log.sessionCount(Group.MEMORY));
+		assertEquals(260, log.sessionCount(Group.FRAME_RATE));
 		assertEquals(0, log.sessionCount(Group.CONNECTION));
 		assertNull("a dropped event is not held", log.byId(3));
 		assertEquals(500, log.copy().size());
@@ -52,7 +52,7 @@ public class EventLogTest
 		assertEquals(1, log.sessionTotal());
 		assertEquals(0, log.sessionCount(Group.WORLD));
 		assertEquals(1, log.sessionCount(Group.CONNECTION));
-		assertFalse("no event 2 is held", log.replace(closed(2, 200, 201, Cause.GC_PAUSE)));
+		assertFalse("no event 2 is held", log.replace(closed(2, 200, 201, Cause.CLIENT_BUSY)));
 		assertEquals(1, log.size());
 		assertEquals(1, log.sessionTotal());
 	}
@@ -72,7 +72,7 @@ public class EventLogTest
 	{
 		final EventLog log = new EventLog(10);
 		log.add(closed(1, 100, 105, Cause.SLOW_WORLD));
-		log.add(closed(2, 200, 200, Cause.GC_PAUSE));
+		log.add(closed(2, 200, 200, Cause.CLIENT_BUSY));
 		log.add(closed(3, 300, 320, Cause.CLIENT_BUSY));
 		log.add(open(4, 400));
 		assertIds(log.between(0, 1000), 1, 2, 3);
@@ -82,7 +82,7 @@ public class EventLogTest
 		assertIds("the open event is not listed", log.between(400, 500));
 		try
 		{
-			log.between(0, 1000).add(closed(9, 1, 1, Cause.GC_PAUSE));
+			log.between(0, 1000).add(closed(9, 1, 1, Cause.CLIENT_BUSY));
 			fail("unmodifiable");
 		}
 		catch (UnsupportedOperationException expected)
@@ -99,7 +99,7 @@ public class EventLogTest
 		log.add(closed(1, 100, 105, Cause.SLOW_WORLD));
 		log.add(open(2, 200));
 		assertEquals(1, log.last().id);
-		log.replace(closed(2, 200, 204, Cause.GC_PAUSE));
+		log.replace(closed(2, 200, 204, Cause.CLIENT_BUSY));
 		assertEquals(2, log.last().id);
 	}
 
@@ -109,7 +109,7 @@ public class EventLogTest
 		final EventLog log = new EventLog(3);
 		for (int i = 1; i <= 4; i++)
 		{
-			log.add(closed(i, i * 10L, i * 10L, Cause.GC_PAUSE));
+			log.add(closed(i, i * 10L, i * 10L, Cause.CLIENT_BUSY));
 		}
 		log.add(open(5, 60));
 		assertIds(log.copy(), 3, 4, 5);
@@ -203,7 +203,7 @@ public class EventLogTest
 	private static LagEvent event(long id, long startSec, long endSec, boolean open, Verdict v)
 	{
 		return new LagEvent(id, startSec, endSec, 0, Trigger.FRAME_GAP.bit(), Trigger.FRAME_GAP, 416, 0, 0, 0, 50,
-			300, 600, 610, 0, 40, 41, 40, 900, 0, -1, 400, 768, 20, 40, open, false, v);
+			300, 600, 610, 0, 40, 41, 40, 900, 0, open, false, v);
 	}
 
 	private static Verdict aVerdict(Cause cause, String headline)

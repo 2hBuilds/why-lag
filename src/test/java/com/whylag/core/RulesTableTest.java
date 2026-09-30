@@ -8,35 +8,34 @@ import static org.junit.Assert.assertSame;
 
 /**
  * The rules table of contract 6.3, pinned by literal: rank, id, cause, kind, base, ceiling and the number of needs,
- * excludes and supports of every row, in rank order; and the scoring rule that every row follows.
+ * excludes and supports of every row, in rank order; and the scoring rule that every row follows. The rows of the
+ * memory (G1, G2) and of the client that was kept waiting (S4) are gone (1.0.0, the Hub's rule), and S3 judges by the
+ * frame gap alone.
  */
 public class RulesTableTest
 {
 	/** rank, id, cause, kind, base, ceiling, needs, excludes, supports - typed from the table of contract 6.3. */
 	private static final Object[][] TABLE = {
 		{1, "D1", Cause.DISCONNECT, Rule.Kind.EVENT, 200, Confidence.SURE, 1, 0, 0},
-		{2, "G1", Cause.GC_PAUSE, Rule.Kind.EVENT, 110, Confidence.SURE, 3, 1, 0},
-		{3, "S1", Cause.MAP_LOAD, Rule.Kind.EVENT, 105, Confidence.SURE, 1, 0, 0},
-		{4, "N3", Cause.UPLOAD_LOSS, Rule.Kind.EVENT, 90, Confidence.LIKELY, 1, 1, 2},
-		{5, "N2", Cause.PING_JUMPY, Rule.Kind.EVENT, 85, Confidence.LIKELY, 4, 2, 1},
-		{6, "W1", Cause.SLOW_WORLD, Rule.Kind.EVENT, 85, Confidence.LIKELY, 9, 1, 1},
-		{7, "S3", Cause.CLIENT_BUSY, Rule.Kind.EVENT, 80, Confidence.HINT, 2, 3, 2},
-		{8, "S4", Cause.CLIENT_WAITING, Rule.Kind.EVENT, 80, Confidence.HINT, 2, 4, 1},
-		{9, "N6", Cause.DELIVERY_GAP, Rule.Kind.EVENT, 75, Confidence.CANT_TELL, 3, 2, 0},
-		{10, "F1", Cause.FRAME_CAP, Rule.Kind.CONDITION, 120, Confidence.SURE, 2, 0, 0},
-		{11, "N1", Cause.PING_HIGH, Rule.Kind.CONDITION, 60, Confidence.SURE, 3, 0, 0},
-		{12, "F2", Cause.SLOW_DRAWING, Rule.Kind.CONDITION, 60, Confidence.LIKELY, 1, 1, 1},
-		{13, "W1c", Cause.SLOW_WORLD, Rule.Kind.CONDITION, 55, Confidence.HINT, 5, 0, 1},
-		{14, "G2", Cause.HEAP_CAP_LOW, Rule.Kind.CONDITION, 50, Confidence.SURE, 1, 0, 0},
-		{15, "V2", Cause.ALL_CLEAR, Rule.Kind.ALWAYS, 10, Confidence.SURE, 0, 0, 0},
-		{16, "X", Cause.NOT_SURE, Rule.Kind.ENGINE, 0, Confidence.CANT_TELL, 0, 0, 0},
+		{2, "S1", Cause.MAP_LOAD, Rule.Kind.EVENT, 105, Confidence.SURE, 1, 0, 0},
+		{3, "N3", Cause.UPLOAD_LOSS, Rule.Kind.EVENT, 90, Confidence.LIKELY, 1, 1, 2},
+		{4, "N2", Cause.PING_JUMPY, Rule.Kind.EVENT, 85, Confidence.LIKELY, 4, 2, 1},
+		{5, "W1", Cause.SLOW_WORLD, Rule.Kind.EVENT, 85, Confidence.LIKELY, 9, 1, 1},
+		{6, "S3", Cause.CLIENT_BUSY, Rule.Kind.EVENT, 80, Confidence.HINT, 1, 3, 1},
+		{7, "N6", Cause.DELIVERY_GAP, Rule.Kind.EVENT, 75, Confidence.CANT_TELL, 3, 2, 0},
+		{8, "F1", Cause.FRAME_CAP, Rule.Kind.CONDITION, 120, Confidence.SURE, 2, 0, 0},
+		{9, "N1", Cause.PING_HIGH, Rule.Kind.CONDITION, 60, Confidence.SURE, 3, 0, 0},
+		{10, "F2", Cause.SLOW_DRAWING, Rule.Kind.CONDITION, 60, Confidence.LIKELY, 1, 1, 1},
+		{11, "W1c", Cause.SLOW_WORLD, Rule.Kind.CONDITION, 55, Confidence.HINT, 5, 0, 1},
+		{12, "V2", Cause.ALL_CLEAR, Rule.Kind.ALWAYS, 10, Confidence.SURE, 0, 0, 0},
+		{13, "X", Cause.NOT_SURE, Rule.Kind.ENGINE, 0, Confidence.CANT_TELL, 0, 0, 0},
 	};
 
 	@Test
 	public void everyRowIsPinned()
 	{
-		assertEquals("one rule per row of 6.3", 16, Rules.ALL.length);
-		assertEquals(16, Rules.count());
+		assertEquals("one rule per row of 6.3", 13, Rules.ALL.length);
+		assertEquals(13, Rules.count());
 		for (int i = 0; i < TABLE.length; i++)
 		{
 			final Object[] row = TABLE[i];
@@ -55,11 +54,14 @@ public class RulesTableTest
 			assertEquals(id + " supports", row[8], r.supports());
 			assertSame(id, r, Rules.byId(id));
 		}
-		assertNull(Rules.byId("G3"));
+		for (String gone : new String[] {"G1", "G2", "G3", "S4", "S5"})
+		{
+			assertNull(gone + " is not a row any more", Rules.byId(gone));
+		}
 	}
 
 	@Test
-	public void theFifteenRulesAreTheWaveOneCauses()
+	public void theTwelveRulesAreTheWaveOneCauses()
 	{
 		int events = 0;
 		int conditions = 0;
@@ -71,8 +73,8 @@ public class RulesTableTest
 			events += r.kind == Rule.Kind.EVENT ? 1 : 0;
 			conditions += r.kind == Rule.Kind.CONDITION ? 1 : 0;
 		}
-		assertEquals(9, events);
-		assertEquals(5, conditions);
+		assertEquals(7, events);
+		assertEquals(4, conditions);
 	}
 
 	@Test
@@ -107,23 +109,29 @@ public class RulesTableTest
 		assertEquals("and costs one step", Confidence.HINT, Rules.N3.confidence(e));
 
 		final Evidence w = new Evidence();
-		w.heapMaxMb = -1;
-		assertEquals("G2's need has no data", 0, Rules.G2.score(w));
-		w.heapMaxMb = 512;
-		assertEquals(50, Rules.G2.score(w));
-		w.heapMaxMb = 700;
-		assertEquals("700 is not under HEAP_CAP_LOW_MB", 0, Rules.G2.score(w));
+		assertEquals("a rule whose need has no data does not answer", 0, Rules.F2.score(w));
+		assertEquals("F1's need has no data either", 0, Rules.F1.score(w));
 
 		final Evidence stall = new Evidence();
 		stall.frameGapMs = 480;
 		stall.frameLimitMs = 200;
-		stall.busyPm = -1;
-		stall.gcCoverPct = -1;
 		stall.rttSpike = Evidence.NO_DATA;
-		assertEquals("S3 answers with the busy share unknown", 80, Rules.S3.score(stall));
-		assertEquals("three signals with no data: the cover, the busy share, the ping", Confidence.CANT_TELL,
+		assertEquals("S3 answers on the frame gap alone", 80, Rules.S3.score(stall));
+		assertEquals("one signal with no data, the ping: one step down", Confidence.CANT_TELL,
 			Rules.S3.confidence(stall));
-		assertEquals("S4 needs a known idle share", 0, Rules.S4.score(stall));
+		stall.rttKnown = true;
+		stall.rttSpike = Evidence.NO;
+		assertEquals("a calm ping supports it", 90, Rules.S3.score(stall));
+		assertEquals("and keeps its ceiling", Confidence.HINT, Rules.S3.confidence(stall));
+		stall.loadMs = 900;
+		assertEquals("a map load excludes it", 0, Rules.S3.score(stall));
+		stall.loadMs = 0;
+		stall.capWaits = true;
+		stall.capIntervalMs = 250;
+		assertEquals("a waiting cap explains a gap of up to two of its intervals: not a freeze", 0,
+			Rules.S3.score(stall));
+		stall.capIntervalMs = 100;
+		assertEquals("but not a gap of nearly five", 90, Rules.S3.score(stall));
 	}
 
 	@Test
@@ -145,9 +153,7 @@ public class RulesTableTest
 	{
 		final Evidence e = new Evidence();
 		assertNull("no condition scores", Rules.bestCondition(e));
-		e.heapMaxMb = 512;
-		assertSame(Rules.G2, Rules.bestCondition(e));
-		// N1 and F2 both at 60: rank 11 before rank 12.
+		// N1 and F2 both at 60: rank 9 before rank 10.
 		e.rttKnown = true;
 		e.rtt = 180;
 		e.rttMin = 170;

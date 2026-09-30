@@ -16,11 +16,11 @@ import javax.swing.JComponent;
 import javax.swing.ToolTipManager;
 
 /**
- * Block 3, the five small cells (contract 5.2): 213 x 48, the cells at x 0, 43, 86, 129 and 172, the first four 40
- * px wide and the fifth 41, so the strip ends at x 213. In a wider strip the cells share the width less four 3 px
- * gaps ({@link #cellX}, {@link #cellW}): each is (width - 12) / 5 wide and the pixels left over go one each to the
- * LAST cells, which is what makes the 213 layout above the same rule. It paints {@link Cell}s as {@link Cells} made
- * them and holds no rule of its own.
+ * Block 3, the three small cells (contract 5.2): 213 x 48, the cells at x 0, 72 and 144, each 69 px wide, so the
+ * strip ends at x 213: a third of the width each. In a wider strip the cells share the width less two 3 px gaps
+ * ({@link #cellX}, {@link #cellW}): each is (width - 6) / 3 wide and the pixels left over go one each to the LAST
+ * cells, which is what makes the 213 layout above the same rule. It paints {@link Cell}s as {@link Cells} made them
+ * and holds no rule of its own.
  *
  * <p>One cell: a {@link Ui#CARD} ground; the level's shape, 7 x 7 at (5, 7); the name in RuneScape Small
  * {@link Ui#LABEL} at x 15, baseline 14; the value in white at x 5, baseline 30, in RuneScape Bold when it is 35 px
@@ -28,19 +28,18 @@ import javax.swing.ToolTipManager;
  * baseline 43. The culprit cell has a 1 px border in its level's colour, the ground {@link Ui#CULPRIT}, its value in
  * {@link Ui#BAD_TEXT} and its name and unit in {@link Ui#CULPRIT_LABEL}. The tooltip is the cell's tip.
  *
- * <p>Choice: the leftover pixels go to the cells from the RIGHT, not from the left as the plan of 2026-09-29 says:
- * the 213 layout has always given its one leftover pixel to the fifth cell, and nothing may move at 213.
+ * <p>Choice: the leftover pixels go to the cells from the RIGHT, not from the left as the plan of 2026-09-29 says.
  * <p>Choice: the text inside a cell keeps its 35 px room and its insets in a wider cell; only the ground grows.
  * <p>Choice: a cell that is not the culprit draws no border: a border in the ground's colour is the ground.
- * <p>Choice: before the first snapshot the five cells are the dashes of an empty snapshot, with no tooltip.
+ * <p>Choice: before the first snapshot the three cells are the dashes of an empty snapshot, with no tooltip.
  * <p>Choice: the 3 px gaps between the cells have no tooltip.
  */
 final class CellStrip extends JComponent
 {
 	static final int HEIGHT = 48;
 	/** The left edge and the width of each cell. */
-	static final int[] X = {0, 43, 86, 129, 172};
-	static final int[] W = {40, 40, 40, 40, 41};
+	static final int[] X = {0, 72, 144};
+	static final int[] W = {69, 69, 69};
 	static final int GAP = 3;
 	/** The text's box in a cell: x 5 .. 39, 35 px. */
 	static final int TEXT_X = 5;
@@ -61,10 +60,10 @@ final class CellStrip extends JComponent
 		ToolTipManager.sharedInstance().registerComponent(this);
 	}
 
-	/** The five cells to paint, in lane order. */
-	void set(Cell[] five)
+	/** The three cells to paint, in lane order. */
+	void set(Cell[] three)
 	{
-		cells = five == null ? blank() : five;
+		cells = three == null ? blank() : three;
 	}
 
 	Cell[] cells()
@@ -174,7 +173,7 @@ final class CellStrip extends JComponent
 	{
 		final Strip[] none = new Strip[0];
 		final Cell[] made = Cells.now(new PanelSnapshot(0, null, 0, null, null, 0, 0, 0, none, null, null,
-			new int[Group.values().length], 0, 0, -1, -1, null, ""));
+			new int[Group.values().length], 0, 0, null, ""));
 		final Cell[] out = new Cell[made.length];
 		for (int i = 0; i < made.length; i++)
 		{

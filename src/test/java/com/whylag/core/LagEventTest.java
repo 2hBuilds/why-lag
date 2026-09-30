@@ -40,7 +40,7 @@ public class LagEventTest
 	public void withVerdictCopiesEveryField() throws IllegalAccessException
 	{
 		final LagEvent e = new LagEvent(1, 2, 3, 4, 5, Trigger.TICK_OFF, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-			18, 19, 20, 21, 22, 23, 24, true, false, null);
+			18, 19, true, false, null);
 		// The constructor puts each number where its name says.
 		assertEquals(1, e.id);
 		assertEquals(2, e.startSec);
@@ -62,11 +62,6 @@ public class LagEventTest
 		assertEquals(17, e.rttBeforeMs);
 		assertEquals(18, e.sentUnits);
 		assertEquals(19, e.resentUnits);
-		assertEquals(20, e.gcPauseMs);
-		assertEquals(21, e.heapUsedMb);
-		assertEquals(22, e.heapMaxMb);
-		assertEquals(23, e.sysCpuPct);
-		assertEquals(24, e.gameBusyPct);
 		assertTrue(e.open);
 		assertFalse(e.becameCondition);
 
@@ -82,7 +77,7 @@ public class LagEventTest
 					numbers.add(((Number) f.get(e)).longValue()));
 			}
 		}
-		assertEquals("the event's numbers, the two CPU fields included", 24, numberFields);
+		assertEquals("the event's numbers", 19, numberFields);
 		assertNotEquals(e.open, e.becameCondition);
 
 		final Verdict v = aVerdict(Cause.CLIENT_BUSY, "The client itself stalled");
@@ -97,8 +92,6 @@ public class LagEventTest
 				assertEquals(f.getName(), f.get(e), f.get(judged));
 			}
 		}
-		assertEquals(23, judged.sysCpuPct);
-		assertEquals(24, judged.gameBusyPct);
 	}
 
 	/** The instance fields of {@link LagEvent}. */
@@ -118,8 +111,8 @@ public class LagEventTest
 	/** An event of 14 s on world 416 with every number known; judged when {@code v} is not null. */
 	private static LagEvent anEvent(Verdict v, int triggers)
 	{
-		return new LagEvent(11, 100, 113, 1_790_000_100_000L, triggers, Trigger.TICK_OFF, 416, 12850, 14, 30, 50, 34,
-			952, 1240, 640, 41, 44, 41, 12_600, 0, 22, 607, 768, 37, 95, false, false, v);
+		return new LagEvent(11, 100, 113, 1_790_000_100_000L, triggers, Trigger.TICK_OFF, 416, 12850, 14, 30, 50,
+			34, 952, 1240, 640, 41, 44, 41, 12_600, 0, false, false, v);
 	}
 
 	private static Verdict aVerdict(Cause cause, String headline)

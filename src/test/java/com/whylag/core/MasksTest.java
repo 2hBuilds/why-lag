@@ -129,7 +129,7 @@ public class MasksTest
 		final Session s = t.build();
 		assertFalse("no FPS Control at all", Masks.masked(s.seconds, 110, t.settings()));
 		final SettingsView limitOff = new SettingsView(Renderer.CPU, true, true, 30, false, 10, false, "", 0, 0, "",
-			0, 60, 768, MemorySource.MANAGEMENT, Os.WINDOWS, "");
+			0, 60, Os.WINDOWS, "");
 		assertEquals("the premise", CapSource.FPS_CONTROL, limitOff.capSource(false));
 		assertFalse("FPS Control on, its unfocused limit off", Masks.masked(s.seconds, 110, limitOff));
 		final SettingsView zero = fpsControlUnfocused(Renderer.CPU, 0, false, "", 0);
@@ -169,6 +169,6 @@ public class MasksTest
 		String vsync, int target)
 	{
 		return new SettingsView(renderer, true, false, 0, true, unfocusedLimit, unlockFps, vsync, target, 0, "", 0, 60,
-			768, MemorySource.MANAGEMENT, Os.WINDOWS, "");
+			Os.WINDOWS, "");
 	}
 }

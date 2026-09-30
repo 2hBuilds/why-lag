@@ -25,10 +25,8 @@ import java.util.Arrays;
  * <p>Choice: {@code tickMedianMs} (gap less frame time) is held at 0 or more, and {@code tickOffMs}, when either of
  * its two sources exists, is held at 0 or more.
  * <p>Choice: with no readable second in the span or the window, every field keeps its "no data" start value
- * ({@code heapMaxMb} and the cap fields included), so no rule scores.
+ * (the cap fields included), so no rule scores.
  * <p>Choice: {@code beforeResentPm} is -1 when there is no last tick or none of the look seconds is readable.
- * <p>Choice: the memory join is computed for a condition as for an event (over the window's worst frame); no
- * condition rule reads it.
  */
 public final class EvidenceBuilder
 {
@@ -115,20 +113,13 @@ public final class EvidenceBuilder
 		final int[] rtts = new int[room];
 		int nRates = 0;
 		int nRtts = 0;
-		long worstSec = -1;
 		int worstMs = Integer.MIN_VALUE;
-		int worstEndMs = 0;
-		int worstBusyPm = -1;
 		boolean worstFocused = false;
-		int heap = -1;
 		for (long sec = lo; sec <= hi; sec++)
 		{
 			final int flags = r.flags(sec);
 			final int frames = r.frames(sec);
 			final int worst = r.worstFrameMs(sec);
-			final int worstEnd = r.worstFrameEndMs(sec);
-			final int busy = r.worstBusyPm(sec);
-			final int used = r.heapUsedMb(sec);
 			final int rtt = r.rttMs(sec);
 			final int age = r.rttAgeS(sec);
 			if (!r.valid(sec))
@@ -153,12 +144,8 @@ public final class EvidenceBuilder
 			if (worst > worstMs)
 			{
 				worstMs = worst;
-				worstSec = sec;
-				worstEndMs = worstEnd;
-				worstBusyPm = busy;
 				worstFocused = Flags.has(flags, Flags.FOCUSED);
 			}
-			heap = Math.max(heap, used);
 			if (fresh(rtt, age))
 			{
 				rtts[nRtts++] = rtt;
@@ -170,12 +157,9 @@ public final class EvidenceBuilder
 		}
 
 		v.frameGapMs = Math.max(0, worstMs);
-		v.busyPm = worstBusyPm < 0 ? -1 : worstBusyPm;
 		v.framesClean = v.frameGapMs < Thresholds.FRAME_CLEAN_MS;
 		v.fps = median(rates, nRates);
 		v.frameMedianMs = v.fps == 0 ? MS_PER_SECOND : (MS_PER_SECOND + v.fps - 1) / v.fps;
-		v.heapUsedMb = heap < 0 ? -1 : heap;
-		v.heapMaxMb = settings.heapMaxMb <= 0 ? -1 : settings.heapMaxMb;
 
 		// The focus of the ONE second judged (contract 3.7): an event's worst frame's, a condition's newest.
 		final boolean focused = condition ? Flags.has(r.flags(to), Flags.FOCUSED) : worstFocused;
@@ -200,18 +184,6 @@ public final class EvidenceBuilder
 			}
 			v.rttMin = min;
 			v.rttMax = max;
-		}
-
-		// The memory join, by the worst frame's own interval, both ends included (C7).
-		final long end = s.msOfSec(worstSec) + worstEndMs;
-		final long start = end - v.frameGapMs;
-		v.gcInferred = s.gcs.inferredIn(start, end);
-		if (settings.memorySource == MemorySource.MANAGEMENT)
-		{
-			v.gcMs = s.gcs.longestPauseMs(start, end);
-			v.gcOverlapMs = s.gcs.overlapMs(start, end);
-			v.gcCoverPct = v.frameGapMs == 0 ? 0
-				: (int) Math.min(PERCENT, (long) v.gcOverlapMs * PERCENT / v.frameGapMs);
 		}
 	}
 

@@ -1,5 +1,6 @@
 package com.whylag.core;
 
+import com.whylag.Version;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -15,8 +16,12 @@ import static org.junit.Assert.assertTrue;
 /**
  * The text of "Copy report" (contract 6.6; lot L5): the picture's report line for line; one line per session event,
  * newest first; the report with no events; plain ASCII whatever the snapshot holds; a dash for a tile with no value;
- * nothing but the five kinds of line, so no player, no address and no plugin list; the "Now:" line ending with the
- * whole PC's CPU; every corner of 6.6; and the corners this lot chose (its "Choice:" lines).
+ * nothing but the five kinds of line, so no player, no address and no plugin list; every corner of 6.6; and the
+ * corners this lot chose (its "Choice:" lines).
+ *
+ * <p>Since 1.0.1 the report also opens with the plugin's version and ends with three more kinds of section (the
+ * minute log, the notes, the warnings and errors); {@code Snap.report()} answers the first five kinds of line alone,
+ * which is what every older test reads, and {@code Snap.full()} the whole text.
  */
 public class ReportTextTest
 {
@@ -26,38 +31,162 @@ public class ReportTextTest
 
 	private static final String NUMBER = "\\d{1,3}(,\\d{3})*";
 	private static final String PRINTABLE = "[ -~]+";
-	private static final String GROUP = "(connection|frame rate|memory|world|not sure)";
+	private static final String GROUP = "(connection|frame rate|world|not sure)";
 	/** The five kinds of line, each matched whole. */
-	private static final Pattern HEADER = Pattern.compile("2h Why Lag report - (world " + NUMBER
+	private static final String HEAD = "2h Why Lag " + Version.CURRENT + " report";
+	private static final Pattern HEADER = Pattern.compile("2h Why Lag \\d+\\.\\d+\\.\\d+ report - (world " + NUMBER
 		+ "|not logged in) - \\d\\d:\\d\\d to \\d\\d:\\d\\d \\(" + NUMBER + " min\\)");
 	private static final Pattern NOW = Pattern.compile("Now: " + PRINTABLE + "\\. (fps -|" + NUMBER + " fps), ticks (-|"
-		+ NUMBER + " ms), ping (-|" + NUMBER + " ms), memory (-|" + NUMBER + " %), CPU (-|\\d+ %)");
+		+ NUMBER + " ms), ping (-|" + NUMBER + " ms)");
 	private static final Pattern COUNTS = Pattern.compile(NUMBER + " lags? this session(: " + NUMBER + " " + GROUP
 		+ "(, " + NUMBER + " " + GROUP + ")*)?");
 	private static final Pattern EVENT = Pattern.compile("\\d\\d:\\d\\d:\\d\\d  " + NUMBER
-		+ " s  (CONNECTION|FRAME RATE|MEMORY|WORLD|NOT SURE)  (Sure|Likely|Hint|Can't tell)(  " + PRINTABLE + ")?");
+		+ " s  (CONNECTION|FRAME RATE|WORLD|NOT SURE)  (Sure|Likely|Hint|Can't tell)(  " + PRINTABLE + ")?");
 	private static final Pattern SETTINGS = Pattern.compile("Client " + PRINTABLE
 		+ ", renderer (CPU|GPU|117 HD|unknown)(, draw distance " + NUMBER + ", " + PRINTABLE + ")?, cap (none|" + NUMBER
-		+ " \\(" + PRINTABLE + "\\)), memory limit (unknown|" + NUMBER + " MB), memory source (management|runtime)");
+		+ " \\(" + PRINTABLE + "\\))");
 	private static final Pattern IPV4 = Pattern.compile("\\b\\d{1,3}(\\.\\d{1,3}){3}\\b");
 
-	/** Contract 6.6's report, every line of it. */
+	/**
+	 * Contract 6.6's report, every line of it, with the 1.0.1 version in line 1 and the three sections after the
+	 * settings line: two minutes of the minute log, three notes, one warning counted twice and one error counted
+	 * twice with its three frames.
+	 */
 	@Test
 	public void thePicturesReport()
 	{
-		assertEquals("2h Why Lag report - world 416 - 20:52 to 21:52 (60 min)\n"
-			+ "Now: Smooth. 50 fps, ticks 600 ms, ping 41 ms, memory 51 %, CPU 37 %\n"
-			+ "4 lags this session: 1 connection, 1 frame rate, 1 memory, 1 world\n"
+		final Snap s = new Snap();
+		s.minutes = pictureMinutes();
+		s.diagnostics = pictureDiagnostics();
+		assertEquals(HEAD + " - world 416 - 20:52 to 21:52 (60 min)\n"
+			+ "Now: Smooth. 50 fps, ticks 600 ms, ping 41 ms\n"
+			+ "4 lags this session: 1 connection, 2 frame rate, 1 world\n"
 			+ "21:47:30  14 s  WORLD  Likely  World 416 is struggling, not you. Ticks 600 to 900+ ms for 14 s."
 			+ " Ping stayed 41 ms, 50 fps. Fix: Hop to a quieter world.\n"
-			+ "21:33:05  2 s  MEMORY  Sure  Memory clean-up froze the game. A 340 ms pause. Memory 742 of 768 MB."
-			+ " Fix: Close the world map. Restart if it repeats.\n"
+			+ "21:33:05  2 s  FRAME RATE  Sure  Drawing is slow. A 340 ms frame. 12 fps."
+			+ " Fix: Lower the draw distance. Restart if it repeats.\n"
 			+ "21:20:40  1 s  FRAME RATE  Hint  The client itself stalled. A 480 ms freeze. Connection and world were"
 			+ " fine. Fix: Turn plugins off one at a time.\n"
 			+ "21:05:12  6 s  CONNECTION  Likely  Packets are being lost. 2 in 100 were re-sent. Ping can look fine."
 			+ " Fix: If every world does it, check cable or Wi-Fi.\n"
-			+ "Client 1.12.38, renderer GPU, draw distance 50, MSAA_2, cap 50 (the client), memory limit 768 MB,"
-			+ " memory source management\n", new Snap().report());
+			+ "Client 1.12.38, renderer GPU, draw distance 50, MSAA_2, cap 50 (the client)\n"
+			+ "\n"
+			+ "Last 60 minutes\n"
+			+ "21:50  fps 48/50/51  tick 601/952 ms  ping 40-43 ms  lags 1  masked 0 s\n"
+			+ "21:51  fps 50/50/50  tick 600/640 ms  ping 41-41 ms  lags 0  masked 2 s\n"
+			+ "\n"
+			+ "Notes\n"
+			+ "20:52:01  plugin started, version " + Version.CURRENT + ", client 1.12.38, Windows 11\n"
+			+ "20:52:05  logged in, world 416\n"
+			+ "21:47:30  lag opened: WORLD, ticks 1,240 ms, ping 41 ms\n"
+			+ "\n"
+			+ "Warnings\n"
+			+ "step: IllegalStateException  2 times  java.lang.IllegalStateException: the probe fails\n"
+			+ "\n"
+			+ "Errors\n"
+			+ "21:52:00  java.lang.IllegalStateException: the probe fails  (2 times)\n"
+			+ "    at com.whylag.core.SnapshotBuilder.build(SnapshotBuilder.java:40)\n"
+			+ "    at com.whylag.WhyLagPlugin.sample(WhyLagPlugin.java:338)\n"
+			+ "    at com.whylag.WhyLagPlugin.sampleOnce(WhyLagPlugin.java:318)\n", s.full());
+	}
+
+	/** With no minutes and no notes the three kinds of section are still there: each heading says "(none)". */
+	@Test
+	public void theLastSectionsSayNoneWithNothingInThem()
+	{
+		final String full = new Snap().full();
+		assertTrue(full, full.endsWith(", cap 50 (the client)\n"
+			+ "\n"
+			+ "Last 60 minutes\n(none)\n"
+			+ "\n"
+			+ "Notes\n(none)\n"
+			+ "\n"
+			+ "Warnings\n(none)\n"
+			+ "\n"
+			+ "Errors\n(none)\n"));
+		assertEquals("the same headings however empty", 1, count(full, "\nLast 60 minutes\n"));
+		assertEquals(1, count(full, "\nNotes\n"));
+		assertEquals(1, count(full, "\nWarnings\n"));
+		assertEquals(1, count(full, "\nErrors\n"));
+		assertAscii(full);
+	}
+
+	/** A snapshot built the old way, with no version, has the old first line. */
+	@Test
+	public void noVersionLeavesItOutOfLineOne()
+	{
+		final Snap s = new Snap();
+		s.version = "";
+		assertEquals("2h Why Lag report - world 416 - 20:52 to 21:52 (60 min)", lines(s.report())[0]);
+	}
+
+	/** The next lot's block goes verbatim between line 1 and Now; "" changes nothing; non-ASCII prints '?'. */
+	@Test
+	public void theChecksBlockSitsBetweenLineOneAndNow()
+	{
+		final Snap s = new Snap();
+		final PanelSnapshot built = s.build();
+		assertEquals("no block, no change", s.full(), ReportText.of(built, ""));
+		assertEquals(ReportText.of(built), ReportText.of(built, ""));
+
+		final String withBlock = ReportText.of(built, "Verdict: Ping cannot be read on this PC\n\nChecks:\nPASS  C1 a  b\n\n");
+		final String[] lines = withBlock.split("\n", -1);
+		assertEquals(HEAD + " - world 416 - 20:52 to 21:52 (60 min)", lines[0]);
+		assertEquals("Verdict: Ping cannot be read on this PC", lines[1]);
+		assertEquals("", lines[2]);
+		assertEquals("Checks:", lines[3]);
+		assertEquals("PASS  C1 a  b", lines[4]);
+		assertEquals("", lines[5]);
+		assertTrue(lines[6], lines[6].startsWith("Now: Smooth. "));
+		assertEquals("only those lines were added", s.full().length() + "Verdict: Ping cannot be read on this PC\n\nChecks:\nPASS  C1 a  b\n\n".length(),
+			withBlock.length());
+
+		final String ascii = ReportText.of(built, "Verdict: caf\u00e9");
+		assertAscii(ascii);
+		assertTrue("an unended last line is ended", ascii.contains("Verdict: caf?\nNow: "));
+	}
+
+	/**
+	 * 1.0.1, lot B: the golden text of the whole report with the Verdict and Checks sections in place - line 1, the
+	 * verdict, a blank line, "Checks:", ten lines, a blank line, then "Now" and everything after it exactly as
+	 * {@link #thePicturesReport} pins it. One check fails: the ping cannot be read on this PC.
+	 */
+	@Test
+	public void theGoldenTextWithTheVerdictAndChecksInPlace()
+	{
+		final Snap s = new Snap();
+		s.minutes = pictureMinutes();
+		s.diagnostics = pictureDiagnostics();
+		final CheckFacts.Builder b = CheckFixtures.healthy();
+		b.pingState = CheckFacts.Ping.UNSUPPORTED;
+		final List<CheckResult> results = Checks.run(b.build());
+
+		final String block = "Verdict: Ping cannot be read on this PC\n"
+			+ "\n"
+			+ "Checks:\n"
+			+ "PASS  C1 Logged in  world 416\n"
+			+ "PASS  C2 Frames arrive  50 fps, 100 frames in 2 s\n"
+			+ "PASS  C3 Ticks arrive  16 in 10 s, last 350 ms ago, mean gap 601 ms\n"
+			+ "FAIL  C4 Ping readable  ping cannot be read on this PC\n"
+			+ "PASS  C5 The sampler runs  last step 340 ms ago, work 120 us\n"
+			+ "PASS  C6 Settings read  renderer GPU, cap known\n"
+			+ "PASS  C7 The badge is up  registered, Show is on\n"
+			+ "PASS  C8 Client fits  client 1.13.0, Java 17.0.18, Windows 11\n"
+			+ "PASS  C9 Clock sane  never went back, zone UTC\n"
+			+ "PASS  C10 Not stuck measuring  card: Smooth\n"
+			+ "\n";
+		assertEquals(block, Checks.section(results));
+
+		final String plain = s.full();
+		final int afterLineOne = plain.indexOf('\n') + 1;
+		final String golden = ReportText.of(s.build(), Checks.section(results));
+		assertEquals(plain.substring(0, afterLineOne) + block + plain.substring(afterLineOne), golden);
+		final String[] lines = golden.split("\n", -1);
+		assertEquals(HEAD + " - world 416 - 20:52 to 21:52 (60 min)", lines[0]);
+		assertEquals("Verdict: Ping cannot be read on this PC", lines[1]);
+		assertEquals("Checks:", lines[3]);
+		assertEquals("Now: Smooth. 50 fps, ticks 600 ms, ping 41 ms", lines[15]);
+		assertAscii(golden);
 	}
 
 	/** One line per session event, newest first; its text is the headline, the proof and the fix. */
@@ -67,7 +196,7 @@ public class ReportTextTest
 		final String[] lines = lines(new Snap().report());
 		assertEquals("the header, now, the counts, four events, the settings", 8, lines.length);
 		assertTrue(lines[3].startsWith("21:47:30  14 s  WORLD  Likely  World 416 is struggling, not you. "));
-		assertTrue(lines[4].startsWith("21:33:05  2 s  MEMORY  Sure  "));
+		assertTrue(lines[4].startsWith("21:33:05  2 s  FRAME RATE  Sure  "));
 		assertTrue(lines[5].startsWith("21:20:40  1 s  FRAME RATE  Hint  "));
 		assertTrue(lines[6].startsWith("21:05:12  6 s  CONNECTION  Likely  "));
 
@@ -105,12 +234,12 @@ public class ReportTextTest
 	{
 		final Snap s = new Snap();
 		s.events = Collections.emptyList();
-		s.counts = counts(0, 0, 0, 0, 0);
+		s.counts = counts(0, 0, 0, 0);
 		s.total = 0;
 		s.verdict = verdict(Cause.ALL_CLEAR, Confidence.SURE, "Smooth", "No lag this session.", "");
 		final String[] lines = lines(s.report());
 		assertEquals(4, lines.length);
-		assertEquals("Now: Smooth. 50 fps, ticks 600 ms, ping 41 ms, memory 51 %, CPU 37 %", lines[1]);
+		assertEquals("Now: Smooth. 50 fps, ticks 600 ms, ping 41 ms", lines[1]);
 		assertEquals("0 lags this session", lines[2]);
 		assertTrue(lines[3].startsWith("Client 1.12.38, "));
 	}
@@ -143,8 +272,7 @@ public class ReportTextTest
 		assertAscii(report);
 		final String[] lines = lines(report);
 		assertEquals("a new line in a field is a '?', not a new line", 8, lines.length);
-		assertEquals("Client 1.12.38-???x?, renderer GPU, draw distance 50, MSAA?2, cap 50 (the client), memory limit"
-			+ " 768 MB, memory source management", lines[7]);
+		assertEquals("Client 1.12.38-???x?, renderer GPU, draw distance 50, MSAA?2, cap 50 (the client)", lines[7]);
 		assertTrue(lines[1].startsWith("Now: Ticks 600 ? 900+ ms. 50 fps, "));
 
 		// The snapshot builder's own snapshot: its Server ticks tile's small line holds a plus-minus sign, which the
@@ -154,7 +282,7 @@ public class ReportTextTest
 		assertAscii(ReportText.of(built));
 	}
 
-	/** A tile with no value prints its word and "-"; not logged in, all four and the CPU do. */
+	/** A tile with no value prints its word and "-"; not logged in, all three do. */
 	@Test
 	public void noDataPrintsADash()
 	{
@@ -167,15 +295,12 @@ public class ReportTextTest
 		{
 			out.tiles[i] = dash(Lane.values()[i], NoData.NOT_LOGGED_IN);
 		}
-		out.sysCpuPct = -1;
-		out.gameBusyPct = -1;
-		assertEquals("Now: Not logged in. fps -, ticks -, ping -, memory -, CPU -", lines(out.report())[1]);
+		assertEquals("Now: Not logged in. fps -, ticks -, ping -", lines(out.report())[1]);
 
 		final String[] expected = {
-			"Now: Smooth. fps -, ticks 600 ms, ping 41 ms, memory 51 %, CPU 37 %",
-			"Now: Smooth. 50 fps, ticks -, ping 41 ms, memory 51 %, CPU 37 %",
-			"Now: Smooth. 50 fps, ticks 600 ms, ping -, memory 51 %, CPU 37 %",
-			"Now: Smooth. 50 fps, ticks 600 ms, ping 41 ms, memory -, CPU 37 %"};
+			"Now: Smooth. fps -, ticks 600 ms, ping 41 ms",
+			"Now: Smooth. 50 fps, ticks -, ping 41 ms",
+			"Now: Smooth. 50 fps, ticks 600 ms, ping -"};
 		for (int i = 0; i < Lane.TILES; i++)
 		{
 			final Snap s = new Snap();
@@ -193,7 +318,7 @@ public class ReportTextTest
 	{
 		final PanelSnapshot built = built();
 		final String report = ReportText.of(built);
-		assertOnlyTheFiveKindsOfLine(report, built.sessionEvents.size());
+		assertOnlyTheFiveKindsOfLine(core(report), built.sessionEvents.size());
 		assertOnlyTheFiveKindsOfLine(new Snap().report(), 4);
 		assertFalse("the developer footer", report.contains(built.footer));
 		assertFalse(report.contains("@"));
@@ -204,21 +329,16 @@ public class ReportTextTest
 		assertFalse(lower.contains("name"));
 	}
 
-	/** Line 2 ends with the whole PC's CPU, "CPU 37 %", or "CPU -"; the game's share is never in the report. */
+	/** Line 2 ends with the ping; nothing about the PC, its memory or its processor is anywhere in the report. */
 	@Test
-	public void nowLineEndsWithCpu()
+	public void nowLineEndsWithThePing()
 	{
 		final Snap s = new Snap();
 		final String now = lines(s.report())[1];
-		assertTrue(now, now.endsWith(", memory 51 %, CPU 37 %"));
-		assertFalse("the game's share, 95 %, is not on the line", now.toLowerCase(Locale.ROOT).contains("game"));
-		assertFalse(now.contains("95"));
-		assertFalse("nor anywhere in the report", s.report().contains("Game") || s.report().contains("95 %"));
-
-		s.sysCpuPct = -1;
-		assertTrue(lines(s.report())[1].endsWith(", memory 51 %, CPU -"));
-		s.sysCpuPct = 100;
-		assertTrue(lines(s.report())[1].endsWith(", memory 51 %, CPU 100 %"));
+		assertTrue(now, now.endsWith(", ping 41 ms"));
+		final String lower = s.report().toLowerCase(Locale.ROOT);
+		assertFalse("no memory", lower.contains("memory"));
+		assertFalse("no processor", lower.contains("cpu"));
 	}
 
 	/** Each corner of 6.6. */
@@ -228,24 +348,24 @@ public class ReportTextTest
 		// " - not logged in" on line 1 at world 0.
 		final Snap out = new Snap();
 		out.world = 0;
-		assertEquals("2h Why Lag report - not logged in - 20:52 to 21:52 (60 min)", lines(out.report())[0]);
+		assertEquals(HEAD + " - not logged in - 20:52 to 21:52 (60 min)", lines(out.report())[0]);
 
 		// "(0 min)" in the first minute; whole minutes, rounded down, after it.
 		final Snap first = new Snap();
 		first.wallMs = START + MINUTE - 1;
-		assertEquals("2h Why Lag report - world 416 - 20:52 to 20:52 (0 min)", lines(first.report())[0]);
+		assertEquals(HEAD + " - world 416 - 20:52 to 20:52 (0 min)", lines(first.report())[0]);
 		first.wallMs = START + 2 * MINUTE - 1;
-		assertEquals("2h Why Lag report - world 416 - 20:52 to 20:53 (1 min)", lines(first.report())[0]);
+		assertEquals(HEAD + " - world 416 - 20:52 to 20:53 (1 min)", lines(first.report())[0]);
 		first.wallMs = START + 24 * 60 * MINUTE;
-		assertEquals("2h Why Lag report - world 416 - 20:52 to 20:52 (1,440 min)", lines(first.report())[0]);
+		assertEquals(HEAD + " - world 416 - 20:52 to 20:52 (1,440 min)", lines(first.report())[0]);
 
 		// A group at 0 is left out of line 3; "1 not sure" is named.
 		final Snap groups = new Snap();
-		groups.counts = counts(0, 2, 0, 1, 1);
+		groups.counts = counts(0, 2, 1, 1);
 		groups.total = 4;
 		assertEquals("4 lags this session: 2 frame rate, 1 world, 1 not sure", lines(groups.report())[2]);
 		final Snap one = new Snap();
-		one.counts = counts(0, 0, 0, 1, 0);
+		one.counts = counts(0, 0, 1, 0);
 		one.total = 1;
 		assertEquals("1 lag this session: 1 world", lines(one.report())[2]);
 
@@ -255,24 +375,22 @@ public class ReportTextTest
 		words.events.add(event(0, 60, 1, verdict(Cause.CLIENT_BUSY, Confidence.HINT, "The client itself stalled",
 			"A 480 ms freeze. Connection and world were fine.", "Turn plugins off one at a time.")));
 		words.events.add(event(1, 120, 2, verdict(Cause.NOT_SURE, Confidence.CANT_TELL, "Can't tell yet",
-			"It was memory clean-up or lost packets.", "Wait for it to happen again.")));
+			"It was a stall or lost packets.", "Wait for it to happen again.")));
 		final String[] w = lines(words.report());
 		assertTrue(w[3], w[3].startsWith("20:54:00  2 s  NOT SURE  Can't tell  "));
 		assertTrue(w[4], w[4].startsWith("20:53:00  1 s  FRAME RATE  Hint  "));
 
 		// "cap none": no cap known (an unknown renderer, FPS Control off).
 		final Snap none = new Snap();
-		none.settings = new SettingsView(Renderer.UNKNOWN, false, false, 0, false, 0, false, "", 0, 0, "", 0, 0, 768,
-			MemorySource.MANAGEMENT, Os.WINDOWS, "1.12.38");
-		assertEquals("Client 1.12.38, renderer unknown, cap none, memory limit 768 MB, memory source management",
-			last(none.report()));
+		none.settings = new SettingsView(Renderer.UNKNOWN, false, false, 0, false, 0, false, "", 0, 0, "", 0, 0,
+			Os.WINDOWS, "1.12.38");
+		assertEquals("Client 1.12.38, renderer unknown, cap none", last(none.report()));
 
 		// No draw distance and no anti-aliasing on the CPU renderer.
 		final Snap cpu = new Snap();
-		cpu.settings = new SettingsView(Renderer.CPU, false, false, 0, false, 0, false, "", 0, 0, "", 0, 60, 768,
-			MemorySource.MANAGEMENT, Os.WINDOWS, "1.12.38");
-		assertEquals("Client 1.12.38, renderer CPU, cap 50 (the client), memory limit 768 MB, memory source"
-			+ " management", last(cpu.report()));
+		cpu.settings = new SettingsView(Renderer.CPU, false, false, 0, false, 0, false, "", 0, 0, "", 0, 60,
+			Os.WINDOWS, "1.12.38");
+		assertEquals("Client 1.12.38, renderer CPU, cap 50 (the client)", last(cpu.report()));
 
 		// "fps -".
 		final Snap noFps = new Snap();
@@ -283,16 +401,6 @@ public class ReportTextTest
 		final Snap noVersion = new Snap();
 		noVersion.settings = gpu("", 50, "MSAA_2");
 		assertTrue(last(noVersion.report()).startsWith("Client unknown, renderer GPU, "));
-
-		// "memory limit unknown", at 0 and below.
-		for (int limit : new int[] {0, -1})
-		{
-			final Snap unknown = new Snap();
-			unknown.settings = new SettingsView(Renderer.GPU, false, false, 0, false, 0, false, "", 0, 50, "MSAA_2", 0,
-				60, limit, MemorySource.RUNTIME, Os.WINDOWS, "1.12.38");
-			assertEquals("Client 1.12.38, renderer GPU, draw distance 50, MSAA_2, cap 50 (the client), memory limit"
-				+ " unknown, memory source runtime", last(unknown.report()));
-		}
 	}
 
 	/** 117 HD prints its name and its settings; the cap is the FOCUSED one, with who set it; numbers get commas. */
@@ -301,15 +409,15 @@ public class ReportTextTest
 	{
 		final Snap hd = new Snap();
 		hd.settings = new SettingsView(Renderer.HD, true, true, 30, true, 10, true, "OFF", 144, 90, "MSAA_16", 3, 144,
-			1024, MemorySource.MANAGEMENT, Os.LINUX, "1.12.38");
+			Os.LINUX, "1.12.38");
 		assertEquals("the unfocused limit is lower, and not printed", 10, hd.settings.capFps(false));
-		assertEquals("Client 1.12.38, renderer 117 HD, draw distance 90, MSAA_16, cap 30 (FPS Control), memory limit"
-			+ " 1,024 MB, memory source management", last(hd.report()));
+		assertEquals("Client 1.12.38, renderer 117 HD, draw distance 90, MSAA_16, cap 30 (FPS Control)",
+			last(hd.report()));
 
 		final Snap vsync = new Snap();
 		vsync.settings = new SettingsView(Renderer.GPU, false, false, 0, false, 0, true, "ON", 0, 50, "DISABLED", 0,
-			144, 768, MemorySource.MANAGEMENT, Os.WINDOWS, "1.12.38");
-		assertTrue(last(vsync.report()).contains(", cap 144 (GPU: V-Sync), "));
+			144, Os.WINDOWS, "1.12.38");
+		assertTrue(last(vsync.report()).endsWith(", cap 144 (GPU: V-Sync)"));
 	}
 
 	/** Choice: a null verdict prints the headline "Still measuring". */
@@ -318,8 +426,7 @@ public class ReportTextTest
 	{
 		final Snap s = new Snap();
 		s.verdict = null;
-		assertEquals("Now: Still measuring. 50 fps, ticks 600 ms, ping 41 ms, memory 51 %, CPU 37 %",
-			lines(s.report())[1]);
+		assertEquals("Now: Still measuring. 50 fps, ticks 600 ms, ping 41 ms", lines(s.report())[1]);
 	}
 
 	/** Choice: an empty proof leaves no trailing space, before a fix or at the end of the line. */
@@ -354,7 +461,7 @@ public class ReportTextTest
 	public void noGroupListedMeansNoColon()
 	{
 		final Snap s = new Snap();
-		s.counts = counts(0, 0, 0, 0, 0);
+		s.counts = counts(0, 0, 0, 0);
 		s.counts[Group.NONE.ordinal()] = 1;
 		s.total = 1;
 		assertEquals("1 lag this session", lines(s.report())[2]);
@@ -366,7 +473,7 @@ public class ReportTextTest
 	{
 		final Snap s = new Snap();
 		s.wallMs = START - 3 * MINUTE;
-		assertEquals("2h Why Lag report - world 416 - 20:52 to 20:49 (0 min)", lines(s.report())[0]);
+		assertEquals(HEAD + " - world 416 - 20:52 to 20:49 (0 min)", lines(s.report())[0]);
 	}
 
 	/** Choice: an empty anti-aliasing name on GPU or 117 HD prints "anti-aliasing unknown". */
@@ -375,8 +482,8 @@ public class ReportTextTest
 	{
 		final Snap s = new Snap();
 		s.settings = gpu("1.12.38", 50, "");
-		assertEquals("Client 1.12.38, renderer GPU, draw distance 50, anti-aliasing unknown, cap 50 (the client),"
-			+ " memory limit 768 MB, memory source management", last(s.report()));
+		assertEquals("Client 1.12.38, renderer GPU, draw distance 50, anti-aliasing unknown, cap 50 (the client)",
+			last(s.report()));
 	}
 
 	// ---------------------------------------------------------------- helpers
@@ -390,26 +497,81 @@ public class ReportTextTest
 		Tile[] tiles = {
 			new Tile(Lane.FRAME_RATE, Level.OK, "50 fps", "worst 35 ms", NoData.NONE),
 			new Tile(Lane.TICKS, Level.OK, "600 ms", "\u00b113 ms", NoData.NONE),
-			new Tile(Lane.PING, Level.OK, "41 ms", "was 39 ms", NoData.NONE),
-			new Tile(Lane.MEMORY, Level.OK, "51 %", "pause 23 ms", NoData.NONE)};
+			new Tile(Lane.PING, Level.OK, "41 ms", "was 39 ms", NoData.NONE)};
 		List<LagEvent> events = picturesEvents();
-		int[] counts = counts(1, 1, 1, 1, 0);
+		int[] counts = counts(1, 2, 1, 0);
 		int total = 4;
-		int sysCpuPct = 37;
-		int gameBusyPct = 95;
 		SettingsView settings = gpu("1.12.38", 50, "MSAA_2");
+		String version = Version.CURRENT;
+		String minutes = "";
+		String diagnostics = "";
 
 		/** The snapshot; its range events and strips are left empty: the report reads neither. */
 		PanelSnapshot build()
 		{
-			return new PanelSnapshot(wallMs, ZoneOffset.UTC, world, verdict, tiles, 60, wallMs - 60 * MINUTE, wallMs,
-				null, Collections.emptyList(), events, counts, total, START, sysCpuPct, gameBusyPct, settings, "");
+			return new PanelSnapshot(wallMs, ZoneOffset.UTC, world, verdict, tiles, 60, wallMs - 60 * MINUTE,
+				wallMs, null, Collections.emptyList(), events, counts, total, START, settings, "", version, minutes,
+				diagnostics);
 		}
 
+		/** The report's first five kinds of line: line 1 to the settings line, none of the last sections. */
 		String report()
+		{
+			return core(full());
+		}
+
+		/** The whole report. */
+		String full()
 		{
 			return ReportText.of(build());
 		}
+	}
+
+	/** {@code full} up to and including its settings line: the last sections follow a blank line. */
+	private static String core(String full)
+	{
+		final int at = full.indexOf("\n\nLast 60 minutes\n");
+		assertTrue("the last sections follow a blank line: " + full, at >= 0);
+		return full.substring(0, at + 1);
+	}
+
+	private static int count(String text, String part)
+	{
+		int n = 0;
+		for (int at = text.indexOf(part); at >= 0; at = text.indexOf(part, at + 1))
+		{
+			n++;
+		}
+		return n;
+	}
+
+	/** Two minutes of the picture's hour, as the plugin's minute log prints them. */
+	private static String pictureMinutes()
+	{
+		final MinuteLog log = new MinuteLog(ZoneOffset.UTC);
+		log.add(new MinuteLine(START + 58 * MINUTE, 48, 50, 51, 601, 952, 40, 43, 1, 0));
+		log.add(new MinuteLine(START + 59 * MINUTE, 50, 50, 50, 600, 640, 41, 41, 0, 2));
+		return log.text();
+	}
+
+	/** Three notes, a warning raised twice and an error seen twice, its stack set so the frames are the same always. */
+	private static String pictureDiagnostics()
+	{
+		final Diagnostics d = new Diagnostics(ZoneOffset.UTC);
+		d.note(START + 1_000, "plugin started, version " + Version.CURRENT + ", client 1.12.38, Windows 11");
+		d.note(START + 5_000, "logged in, world 416");
+		d.note(START + 55 * MINUTE + 30_000, "lag opened: WORLD, ticks 1,240 ms, ping 41 ms");
+		d.warnOnce("step: IllegalStateException", "java.lang.IllegalStateException: the probe fails");
+		d.warnOnce("step: IllegalStateException", "java.lang.IllegalStateException: the probe fails");
+		final IllegalStateException boom = new IllegalStateException("the probe fails");
+		boom.setStackTrace(new StackTraceElement[] {
+			new StackTraceElement("com.whylag.core.SnapshotBuilder", "build", "SnapshotBuilder.java", 40),
+			new StackTraceElement("com.whylag.WhyLagPlugin", "sample", "WhyLagPlugin.java", 338),
+			new StackTraceElement("com.whylag.WhyLagPlugin", "sampleOnce", "WhyLagPlugin.java", 318),
+			new StackTraceElement("java.util.concurrent.FutureTask", "run", "FutureTask.java", 264)});
+		d.error(START + 60 * MINUTE, boom);
+		d.error(START + 60 * MINUTE + 1_000, boom);
+		return d.text();
 	}
 
 	/** The picture's four lags, oldest first: one of each group, the newest a slow world at 21:47:30. */
@@ -420,8 +582,8 @@ public class ReportTextTest
 			"2 in 100 were re-sent. Ping can look fine.", "If every world does it, check cable or Wi-Fi.")));
 		out.add(event(1, 28 * 60 + 40, 1, verdict(Cause.CLIENT_BUSY, Confidence.HINT, "The client itself stalled",
 			"A 480 ms freeze. Connection and world were fine.", "Turn plugins off one at a time.")));
-		out.add(event(2, 41 * 60 + 5, 2, verdict(Cause.GC_PAUSE, Confidence.SURE, "Memory clean-up froze the game",
-			"A 340 ms pause. Memory 742 of 768 MB.", "Close the world map. Restart if it repeats.")));
+		out.add(event(2, 41 * 60 + 5, 2, verdict(Cause.SLOW_DRAWING, Confidence.SURE, "Drawing is slow",
+			"A 340 ms frame. 12 fps.", "Lower the draw distance. Restart if it repeats.")));
 		out.add(event(3, 55 * 60 + 30, 14, verdict(Cause.SLOW_WORLD, Confidence.LIKELY,
 			"World 416 is struggling, not you", "Ticks 600 to 900+ ms for 14 s. Ping stayed 41 ms, 50 fps.",
 			"Hop to a quieter world.")));
@@ -432,8 +594,7 @@ public class ReportTextTest
 	private static LagEvent event(long id, long startSec, int lengthS, Verdict v)
 	{
 		return new LagEvent(id, startSec, startSec + lengthS - 1, START + startSec * 1000, Trigger.TICK_OFF.bit(),
-			Trigger.TICK_OFF, 416, 0, 0, 0, 50, 34, 952, 1240, 640, 41, 44, 41, 900, 0, 22, 607, 768, 37, 95, false,
-			false, v);
+			Trigger.TICK_OFF, 416, 0, 0, 0, 50, 34, 952, 1240, 640, 41, 44, 41, 900, 0, false, false, v);
 	}
 
 	private static Verdict verdict(Cause cause, Confidence confidence, String headline, String proof, String fix)
@@ -441,13 +602,12 @@ public class ReportTextTest
 		return new Verdict(cause, confidence, Level.BAD, headline, proof, fix, "", 0, 0, 416, -1, null, null);
 	}
 
-	/** The session counts by group: connection, frame rate, memory, world, not sure; NONE at 0. */
-	private static int[] counts(int connection, int frameRate, int memory, int world, int unsure)
+	/** The session counts by group: connection, frame rate, world, not sure; NONE at 0. */
+	private static int[] counts(int connection, int frameRate, int world, int unsure)
 	{
 		final int[] out = new int[Group.values().length];
 		out[Group.CONNECTION.ordinal()] = connection;
 		out[Group.FRAME_RATE.ordinal()] = frameRate;
-		out[Group.MEMORY.ordinal()] = memory;
 		out[Group.WORLD.ordinal()] = world;
 		out[Group.UNSURE.ordinal()] = unsure;
 		return out;
@@ -457,7 +617,7 @@ public class ReportTextTest
 	private static SettingsView gpu(String clientVersion, int drawDistance, String antiAliasing)
 	{
 		return new SettingsView(Renderer.GPU, false, false, 0, false, 0, false, "", 0, drawDistance, antiAliasing, 0,
-			60, 768, MemorySource.MANAGEMENT, Os.WINDOWS, clientVersion);
+			60, Os.WINDOWS, clientVersion);
 	}
 
 	private static Tile dash(Lane lane, NoData why)
@@ -477,13 +637,14 @@ public class ReportTextTest
 			"A 170 ms freeze. Its cause was not measured.", "Wait for it to happen again.")));
 		final Verdict smooth = new Verdict(Cause.ALL_CLEAR, Confidence.SURE, Level.OK, "Smooth", "No lag for 1 min.",
 			"", "", s.wallMsOf(500), 0, 416, -1, null, null);
-		return new SnapshotBuilder().build(s, smooth, 10, 600, s.wallMsOf(600), t.settings(), "self: step 40 us");
+		return new SnapshotBuilder().build(s, smooth, 10, 600, s.wallMsOf(600), t.settings(), "self: step 40 us")
+			.withDiagnostics(Version.CURRENT, "", "");
 	}
 
 	private static LagEvent event(Session s, long id, long from, long to, Verdict v)
 	{
-		return new LagEvent(id, from, to, s.wallMsOf(from), Trigger.TICK_OFF.bit(), Trigger.TICK_OFF, 416, 0, 0, 0, 50,
-			22, 700, 952, 330, 40, 40, 40, 5400, 0, 0, 400, 768, 20, 40, false, false, v);
+		return new LagEvent(id, from, to, s.wallMsOf(from), Trigger.TICK_OFF.bit(), Trigger.TICK_OFF, 416, 0, 0, 0,
+			50, 22, 700, 952, 330, 40, 40, 40, 5400, 0, false, false, v);
 	}
 
 	/** The lines of a report, each of which ended with a new line. */

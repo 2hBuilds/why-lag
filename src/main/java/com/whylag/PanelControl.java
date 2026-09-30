@@ -13,7 +13,12 @@ public interface PanelControl
 	/** The range shown, 1, 10 or 60. */
 	int range();
 
-	/** Presses "Copy report": sets the clipboard and answers the text. Swing thread. */
+	/**
+	 * Chooses "Troubleshoot..." in the gear menu (1.0.1, lot C): the window opens on "Testing...", the checks run and
+	 * the report fills the window when it comes back. Answers the report's text only when the actions brought it back
+	 * before this returned (a stub does; the plugin does not and answers ""), and "" before the first snapshot.
+	 * Swing thread.
+	 */
 	String copyReport();
 
 	/** Selects the list row of that event; -1 = none. Swing thread. */

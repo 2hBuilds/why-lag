@@ -149,7 +149,7 @@ public class LagDetectorPropertyTest
 				case 2:
 					// Unfocused throughout, under FPS Control's unfocused limit.
 					v = new SettingsView(Renderer.CPU, true, r.nextBoolean(), 30, true, 1 + r.nextInt(50), false, "", 0,
-						0, "", 0, 60, 768, MemorySource.MANAGEMENT, Os.WINDOWS, "");
+						0, "", 0, 60, Os.WINDOWS, "");
 					recipe.add(t -> t.unfocused(0, n - 1));
 					break;
 				default:
@@ -496,27 +496,13 @@ public class LagDetectorPropertyTest
 				final int end = r.nextInt(1000);
 				final int ms = Math.min(20 + r.nextInt(1600), sp.longestFrameEndingIn(at, end));
 				recipe.add(t -> t.frameGap(at, end, ms));
-				if (r.nextBoolean())
-				{
-					final int pm = r.nextInt(1001);
-					recipe.add(t -> t.busy(at, pm));
-				}
 				break;
 			}
 			case 3:
-			{
-				final int offset = r.nextInt(1000);
-				final int ms = 1 + r.nextInt(500);
-				final int heapAfter = 200 + r.nextInt(600);
-				recipe.add(t -> t.gcPause(at, offset, ms, heapAfter));
-				break;
-			}
 			case 4:
-			{
-				final int heapAfter = 200 + r.nextInt(600);
-				recipe.add(t -> t.gcInferred(at, heapAfter));
+				// The two memory incidents of the first build (a known pause, an inferred collection) are gone: the
+				// plugin reads no memory any more (1.0.0, the Hub's rule). The draws keep their places.
 				break;
-			}
 			case 5:
 				if (sp.tickMoves)
 				{
@@ -595,14 +581,10 @@ public class LagDetectorPropertyTest
 			}
 			case 17:
 			{
-				final int sys = r.nextInt(102) - 1;
-				final int game = r.nextInt(102) - 1;
-				final int heap = 100 + r.nextInt(700);
 				final int players = r.nextInt(300);
 				final int npcs = r.nextInt(300);
 				final int region = r.nextInt(65536);
-				recipe.add(t -> t.cpu(at, to, sys, game).heap(at, to, heap).players(at, to, players).npcs(at, to, npcs)
-					.region(at, to, region));
+				recipe.add(t -> t.players(at, to, players).npcs(at, to, npcs).region(at, to, region));
 				break;
 			}
 			case 18:
@@ -675,16 +657,16 @@ public class LagDetectorPropertyTest
 		{
 			case 1:
 				return new SettingsView(Renderer.GPU, false, false, 0, false, 0, true, "OFF", r.nextInt(241), 50,
-					"MSAA_2", 3, 60, 768, MemorySource.MANAGEMENT, Os.WINDOWS, "");
+					"MSAA_2", 3, 60, Os.WINDOWS, "");
 			case 2:
 				return new SettingsView(Renderer.HD, false, false, 0, false, 0, true, "ON", 0, 90, "", 3,
-					30 + r.nextInt(200), 1024, MemorySource.MANAGEMENT, Os.WINDOWS, "");
+					30 + r.nextInt(200), Os.WINDOWS, "");
 			case 3:
 				return new SettingsView(Renderer.CPU, true, r.nextBoolean(), 1 + r.nextInt(60), r.nextBoolean(),
-					r.nextInt(60), false, "", 0, 0, "", 0, 60, 768, MemorySource.MANAGEMENT, Os.WINDOWS, "");
+					r.nextInt(60), false, "", 0, 0, "", 0, 60, Os.WINDOWS, "");
 			case 4:
 				return new SettingsView(Renderer.CPU, false, false, 0, false, 0, false, "", 0, 0, "", 0, 60,
-					r.nextBoolean() ? 0 : 256 + r.nextInt(2000), MemorySource.RUNTIME, Os.WINDOWS, "");
+					Os.WINDOWS, "");
 			default:
 				return Trace.steady(1).settings();
 		}

@@ -12,10 +12,9 @@ import java.lang.invoke.VarHandle;
  * The slot of second {@code sec} is {@code sec % capacity}. No method allocates and none takes a lock.
  *
  * <p><b>Clamps</b> (the clamp table of contract 3.3): every value is clamped to its column on write, and a put
- * never throws for a value. The short columns ({@code frames}, {@code worstFrameMs}, {@code busyPm},
- * {@code worstBusyPm}, {@code loadingMs}, {@code world}, {@code players}, {@code npcs}, {@code rttMs},
- * {@code rttAgeS}, {@code heapUsedMb}, {@code procCpuPct}, {@code sysCpuPct}) hold -1 .. 32767: EVERY negative value
- * is stored as -1 ("no data"), over 32767 as 32767. {@code worstFrameEndMs} holds 0 .. 999; the byte columns
+ * never throws for a value. The short columns ({@code frames}, {@code worstFrameMs}, {@code loadingMs},
+ * {@code world}, {@code players}, {@code npcs}, {@code rttMs}, {@code rttAgeS}) hold -1 .. 32767: EVERY negative
+ * value is stored as -1 ("no data"), over 32767 as 32767. {@code worstFrameEndMs} holds 0 .. 999; the byte columns
  * ({@code slowFrames}, {@code state}, {@code flags}) 0 .. 127, a negative stored as 0; {@code region} 0 .. 65535, a
  * negative stored as 0; {@code sentUnits} and {@code resentUnits} are kept whole (the writer never hands in a
  * negative); {@code conn} is the {@link NoData} ordinal, a null stored as {@link NoData#NONE}.
@@ -45,8 +44,6 @@ public final class SecondRing
 	private final short[] worstFrameMs;
 	private final short[] worstFrameEndMs;
 	private final byte[] slowFrames;
-	private final short[] busyPm;
-	private final short[] worstBusyPm;
 	private final short[] loadingMs;
 	private final byte[] state;
 	private final byte[] flags;
@@ -59,9 +56,6 @@ public final class SecondRing
 	private final short[] rttAgeS;
 	private final int[] sentUnits;
 	private final int[] resentUnits;
-	private final short[] heapUsedMb;
-	private final short[] procCpuPct;
-	private final short[] sysCpuPct;
 	private final byte[] conn;
 
 	private volatile long frameHead = -1;
@@ -81,8 +75,6 @@ public final class SecondRing
 		worstFrameMs = new short[capacity];
 		worstFrameEndMs = new short[capacity];
 		slowFrames = new byte[capacity];
-		busyPm = new short[capacity];
-		worstBusyPm = new short[capacity];
 		loadingMs = new short[capacity];
 		state = new byte[capacity];
 		flags = new byte[capacity];
@@ -94,9 +86,6 @@ public final class SecondRing
 		rttAgeS = new short[capacity];
 		sentUnits = new int[capacity];
 		resentUnits = new int[capacity];
-		heapUsedMb = new short[capacity];
-		procCpuPct = new short[capacity];
-		sysCpuPct = new short[capacity];
 		conn = new byte[capacity];
 	}
 
@@ -126,8 +115,6 @@ public final class SecondRing
 		worstFrameMs[i] = toShort(v.worstFrameMs);
 		worstFrameEndMs[i] = (short) Fmt.clamp(v.worstFrameEndMs, 0, LAST_MS);
 		slowFrames[i] = toByte(v.slowFrames);
-		busyPm[i] = toShort(v.busyPm);
-		worstBusyPm[i] = toShort(v.worstBusyPm);
 		loadingMs[i] = toShort(v.loadingMs);
 		state[i] = toByte(v.state);
 		flags[i] = toByte(v.flags);
@@ -157,9 +144,6 @@ public final class SecondRing
 		rttAgeS[i] = toShort(v.rttAgeS);
 		sentUnits[i] = v.sentUnits;
 		resentUnits[i] = v.resentUnits;
-		heapUsedMb[i] = toShort(v.heapUsedMb);
-		procCpuPct[i] = toShort(v.procCpuPct);
-		sysCpuPct[i] = toShort(v.sysCpuPct);
 		conn[i] = (byte) (v.conn == null ? NoData.NONE : v.conn).ordinal();
 		hostHead = sec;
 	}
@@ -217,16 +201,6 @@ public final class SecondRing
 		return slowFrames[slot(sec)];
 	}
 
-	public int busyPm(long sec)
-	{
-		return busyPm[slot(sec)];
-	}
-
-	public int worstBusyPm(long sec)
-	{
-		return worstBusyPm[slot(sec)];
-	}
-
 	public int loadingMs(long sec)
 	{
 		return loadingMs[slot(sec)];
@@ -281,21 +255,6 @@ public final class SecondRing
 	public int resentUnits(long sec)
 	{
 		return resentUnits[slot(sec)];
-	}
-
-	public int heapUsedMb(long sec)
-	{
-		return heapUsedMb[slot(sec)];
-	}
-
-	public int procCpuPct(long sec)
-	{
-		return procCpuPct[slot(sec)];
-	}
-
-	public int sysCpuPct(long sec)
-	{
-		return sysCpuPct[slot(sec)];
 	}
 
 	/**

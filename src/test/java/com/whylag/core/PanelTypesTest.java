@@ -4,15 +4,13 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
  * What the panel reads (contract 3.8): a tile, a strip and the snapshot keep their texts and lists safe; the short
- * strip constructor means "no second series"; a strip keeps its second series (the CPU lane's Game line); the
- * snapshot carries the CPU of now, which the report reads; and the time map of contract 5.3 ({@link Strip#columnOf},
+ * strip keeps its one series; and the time map of contract 5.3 ({@link Strip#columnOf},
  * {@link Strip#columnStart}) cuts a range into 213 columns the snapshot and the panel both use.
  */
 public class PanelTypesTest
@@ -25,10 +23,7 @@ public class PanelTypesTest
 		assertEquals("", tile.sub);
 		assertEquals(NoData.NONE, tile.noData);
 		assertEquals("", new Strip(Lane.PING, new int[0], new byte[0], 0, 100, null, Level.OK).now);
-		final Strip cpu = new Strip(Lane.CPU, new int[0], new byte[0], 0, 100, null, Level.NO_DATA, new int[0], null);
-		assertEquals("", cpu.now);
-		assertEquals("a null second value is kept as \"\"", "", cpu.now2);
-		final PanelSnapshot s = snapshot(null, null, -1, -1, null);
+		final PanelSnapshot s = snapshot(null, null, null);
 		assertTrue(s.rangeEvents.isEmpty());
 		assertTrue(s.sessionEvents.isEmpty());
 		assertEquals("", s.footer);
@@ -38,9 +33,9 @@ public class PanelTypesTest
 	public void theSnapshotsListsAreUnmodifiable()
 	{
 		final List<LagEvent> list = new ArrayList<>();
-		list.add(new LagEvent(11, 100, 113, 0, 0, Trigger.TICK_OFF, 416, 0, 0, 0, 50, 34, 952, 1240, 640, 41, 44, 41,
-			900, 0, 22, 607, 768, 37, 95, false, false, null));
-		final PanelSnapshot t = snapshot(list, list, 37, 95, "self");
+		list.add(new LagEvent(11, 100, 113, 0, 0, Trigger.TICK_OFF, 416, 0, 0, 0, 50, 34, 952, 1240, 640, 41, 44,
+			41, 900, 0, false, false, null));
+		final PanelSnapshot t = snapshot(list, list, "self");
 		assertEquals("self", t.footer);
 		try
 		{
@@ -63,13 +58,11 @@ public class PanelTypesTest
 	}
 
 	@Test
-	public void theShortStripConstructorMeansNoSecondSeries()
+	public void aStripKeepsItsSeries()
 	{
 		final int[] values = {50, 49, Strip.NONE};
 		final byte[] levels = {0, 0, (byte) Level.NO_DATA.ordinal()};
 		final Strip s = new Strip(Lane.FRAME_RATE, values, levels, 0, 60, "50 fps", Level.OK);
-		assertNull("no second series", s.values2);
-		assertEquals("", s.now2);
 		assertSame(values, s.values);
 		assertSame(levels, s.levels);
 		assertEquals(Lane.FRAME_RATE, s.lane);
@@ -77,44 +70,6 @@ public class PanelTypesTest
 		assertEquals(60, s.max);
 		assertEquals("50 fps", s.now);
 		assertEquals(Level.OK, s.nowLevel);
-	}
-
-	/** The CPU lane: the PC line with its level and value, and the Game line with only its value. */
-	@Test
-	public void stripKeepsItsSecondSeries()
-	{
-		final int[] pc = {20, 37, Strip.NONE};
-		final byte[] levels = {0, 0, (byte) Level.NO_DATA.ordinal()};
-		final int[] game = {40, 95, Strip.NONE};
-		final Strip s = new Strip(Lane.CPU, pc, levels, 0, Thresholds.STRIP_CPU_MAX_PCT, "PC 37 %", Level.OK, game,
-			"Game 95 %");
-		assertEquals(Lane.CPU, s.lane);
-		assertSame(pc, s.values);
-		assertSame(levels, s.levels);
-		assertSame(game, s.values2);
-		assertEquals("PC 37 %", s.now);
-		assertEquals(Level.OK, s.nowLevel);
-		assertEquals("Game 95 %", s.now2);
-		assertEquals(0, s.min);
-		assertEquals(100, s.max);
-		final Strip empty = new Strip(Lane.CPU, new int[] {Strip.NONE}, new byte[] {3}, 0, 100, "", Level.NO_DATA,
-			new int[] {Strip.NONE}, "");
-		assertEquals("an empty second series is an array, not null", 1, empty.values2.length);
-		assertEquals(Strip.NONE, empty.values2[0]);
-	}
-
-	@Test
-	public void snapshotCarriesTheCpuOfNow()
-	{
-		final PanelSnapshot s = snapshot(null, null, 37, 95, "");
-		assertEquals(37, s.sysCpuPct);
-		assertEquals(95, s.gameBusyPct);
-		final PanelSnapshot none = snapshot(null, null, -1, -1, "");
-		assertEquals("no data", -1, none.sysCpuPct);
-		assertEquals(-1, none.gameBusyPct);
-		final PanelSnapshot pcOnly = snapshot(null, null, 20, -1, "");
-		assertEquals(20, pcOnly.sysCpuPct);
-		assertEquals(-1, pcOnly.gameBusyPct);
 	}
 
 	/**
@@ -193,11 +148,9 @@ public class PanelTypesTest
 		}
 	}
 
-	private static PanelSnapshot snapshot(List<LagEvent> range, List<LagEvent> session, int sysCpuPct,
-		int gameBusyPct, String footer)
+	private static PanelSnapshot snapshot(List<LagEvent> range, List<LagEvent> session, String footer)
 	{
 		return new PanelSnapshot(0, null, 0, null, new Tile[0], 10, 0, 0, new Strip[0], range, session,
-			new int[Group.values().length], session == null ? 0 : session.size(), 0, sysCpuPct, gameBusyPct, null,
-			footer);
+			new int[Group.values().length], session == null ? 0 : session.size(), 0, null, footer);
 	}
 }

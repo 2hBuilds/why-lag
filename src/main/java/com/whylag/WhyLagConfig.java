@@ -8,17 +8,17 @@ import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigSection;
 
 /**
- * The plugin's one config (contract 3.9). Five items: the memory source, then the four settings
- * of the game badge under the section "Game screen". The group, the five keys and the stored names of the two enum
- * settings ({@link BadgeStyle}, {@link WhenSmooth}) are FROZEN at first release, because renaming one silently
- * discards every user's setting ({@code WhyLagConfigTest} pins them as literals). The section's key,
- * {@link #GAME_SCREEN}, names the section only; it stores nothing.
+ * The plugin's one config (contract 3.9). Four items: the four settings of the game badge under the section
+ * "Game screen". The group, the four keys and the stored names of the two enum settings ({@link BadgeStyle},
+ * {@link WhenSmooth}) are FROZEN at first release, because renaming one silently discards every user's setting
+ * ({@code WhyLagConfigTest} pins them as literals). The section's key, {@link #GAME_SCREEN}, names the section
+ * only; it stores nothing.
  *
  * <p>The graph range is NOT a setting (the user, 2026-09-29: the settings "seem duplicate"): the three chips on
  * the panel are the one place it is chosen, and the panel opens on 1 min.
  *
  * <p><b>Flat on purpose.</b> RuneLite's {@code ConfigManager.setDefaultConfiguration} walks only
- * {@code getDeclaredMethods()} of the interface it is given, so an item inherited from a super-interface gets no
+ * the methods declared on the interface it is given, so an item inherited from a super-interface gets no
  * stored default and the config panel then fails on {@code Enum.valueOf(type, null)} (CLAUDE.md, "Config
  * interfaces must be FLAT"). Every item is declared here, a section is a {@code String} constant of this interface,
  * and this interface extends {@link Config} alone.
@@ -27,17 +27,6 @@ import net.runelite.client.config.ConfigSection;
 public interface WhyLagConfig extends Config
 {
 	String GROUP = "whylag";
-
-	@ConfigItem(
-		keyName = "systemStats",
-		name = "Exact memory pauses",
-		description = "Read memory clean-up pauses and processor use from Java. Off: memory is estimated.",
-		position = 2
-	)
-	default boolean systemStats()
-	{
-		return true;
-	}
 
 	@ConfigSection(
 		name = "Game screen",

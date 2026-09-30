@@ -7,7 +7,6 @@ package com.whylag.core;
 public enum Trigger
 {
 	FRAME_GAP,
-	GC_PAUSE,
 	TICK_OFF,
 	NO_TICK,
 	RTT_SPIKE,

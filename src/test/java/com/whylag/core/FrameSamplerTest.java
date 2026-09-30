@@ -20,9 +20,6 @@ public class FrameSamplerTest
 	private Session session;
 	private SecondRing ring;
 	private FrameSampler frames;
-	/** The CPU clock handed in with each frame; -1 = unsupported. */
-	private long cpu;
-	private long cpuPerFrame;
 
 	@Before
 	public void setUp()
@@ -30,8 +27,6 @@ public class FrameSamplerTest
 		session = new Session(START, 1_000_000L, Os.WINDOWS, ZoneOffset.UTC);
 		ring = session.seconds;
 		frames = new FrameSampler(session, new SelfTimer());
-		cpu = -1;
-		cpuPerFrame = 0;
 	}
 
 	private static long at(long ms)
@@ -41,11 +36,7 @@ public class FrameSamplerTest
 
 	private void frame(long ms)
 	{
-		if (cpu >= 0)
-		{
-			cpu += cpuPerFrame;
-		}
-		frames.frame(at(ms), (int) (ms / FRAME_MS), cpu);
+		frames.frame(at(ms), (int) (ms / FRAME_MS));
 	}
 
 	/** Frames at {@code fromMs}, {@code fromMs + 20} ... up to and including {@code toMs}. */
@@ -143,8 +134,6 @@ public class FrameSamplerTest
 	{
 		frames.state(at(0), State.LOGGED_IN);
 		frames.world(302);
-		cpu = 0;
-		cpuPerFrame = 1_000_000L;
 		frame(500);
 		frame(520);
 		frame(4500);
@@ -158,8 +147,6 @@ public class FrameSamplerTest
 			assertEquals(0, ring.worstFrameMs(sec));
 			assertEquals(0, ring.worstFrameEndMs(sec));
 			assertEquals(0, ring.slowFrames(sec));
-			assertEquals(-1, ring.busyPm(sec));
-			assertEquals(-1, ring.worstBusyPm(sec));
 			assertEquals("a filled second keeps the code in force", State.LOGGED_IN, ring.state(sec));
 			assertEquals(302, ring.world(sec));
 			assertEquals(Flags.NO_FRAMES | Flags.FOCUSED, ring.flags(sec));
@@ -265,37 +252,6 @@ public class FrameSamplerTest
 		assertEquals(0, ring.loadingMs(2));
 		assertTrue(has(2, Flags.LOADING));
 		assertFalse(has(3, Flags.LOADING));
-	}
-
-	@Test
-	public void busyShare()
-	{
-		cpu = 0;
-		cpuPerFrame = 5_000_000L;
-		run(0, 1200);
-		cpuPerFrame = 90_000_000L;
-		frame(1300);
-		cpuPerFrame = 5_000_000L;
-		run(1320, 2000);
-		// second 1: 45 frames of 20 ms at 5 ms of CPU and one of 100 ms at 90 ms: 315 ms of CPU in 1000 ms
-		assertEquals(250, ring.busyPm(0));
-		assertEquals(250, ring.worstBusyPm(0));
-		assertEquals(315, ring.busyPm(1));
-		assertEquals(100, ring.worstFrameMs(1));
-		assertEquals(900, ring.worstBusyPm(1));
-
-		// the CPU clock answers -1: both are no data
-		cpu = -1;
-		run(2020, 3000);
-		assertEquals(-1, ring.busyPm(2));
-		assertEquals(-1, ring.worstBusyPm(2));
-
-		// a thread that burned more CPU than wall time passed (clock grain) is held at 1000
-		cpu = 1_000_000_000L;
-		cpuPerFrame = 25_000_000L;
-		run(3020, 5000);
-		assertEquals(1000, ring.busyPm(4));
-		assertEquals(1000, ring.worstBusyPm(4));
 	}
 
 	@Test
@@ -424,8 +380,6 @@ public class FrameSamplerTest
 		assertEquals("and closes no interval", 0, ring.worstFrameMs(5));
 		assertEquals(0, ring.worstFrameEndMs(5));
 		assertEquals(0, ring.slowFrames(5));
-		assertEquals(-1, ring.busyPm(5));
-		assertEquals(-1, ring.worstBusyPm(5));
 		assertFalse(has(5, Flags.NO_FRAMES));
 
 		assertEquals(800, ring.worstFrameMs(6));

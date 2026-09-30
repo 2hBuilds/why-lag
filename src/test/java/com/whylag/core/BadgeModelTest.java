@@ -1,6 +1,5 @@
 package com.whylag.core;
 
-import java.lang.management.ManagementFactory;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
@@ -8,7 +7,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
-import org.junit.Assume;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -23,7 +21,7 @@ import static org.junit.Assert.assertTrue;
  * picture 22, the hold, the tooltip's words, an event's numbers, one chat line per lag and the chat gap. Every verdict
  * and every event is built by constructor (L10 cannot run the detector or the judge). The picture's event runs from
  * 21:47:30 to 21:47:43, session seconds 30 to 43 (fourteen seconds) on world 416: worst tick 1,240 ms (mean 952),
- * ping 41 ms (highest 310), worst frame 480 ms at 50 fps, a 340 ms pause with 742 MB used.
+ * ping 41 ms (highest 310), worst frame 480 ms at 50 fps.
  */
 public class BadgeModelTest
 {
@@ -355,10 +353,10 @@ public class BadgeModelTest
 	}
 
 	/**
-	 * The seven rows of picture 22, part A, in each style's column: level, icon and both lines of each, with "Memory
-	 * stall" for the picture's "Memory pause" (contract 10.3). Row 4 is a frame rate LAG with F2's words (wave one's
-	 * F2 is a condition, so the verdict is built at BAD by hand); row 5 is "slow, not lag", a condition with G1's
-	 * words.
+	 * The seven rows of picture 22, part A, in each style's column: level, icon and both lines of each, with "Client
+	 * froze" for the picture's "Memory pause", which is gone (contract 10.3; 1.0.0). Row 4 is a frame rate LAG with
+	 * F2's words (wave one's F2 is a condition, so the verdict is built at BAD by hand); row 5 is "slow, not lag", a
+	 * condition with S3's words.
 	 */
 	@Test
 	public void everyStateOfPictureTwentyTwo()
@@ -374,8 +372,8 @@ public class BadgeModelTest
 				true, s, WhenSmooth.SHOW, true), Level.BAD, Icon.LINE, "Ping lag", "Your internet");
 			assertRow(s, "4 Frame rate lag", m.update(v2(FOUR_MIN), openLag(judged(Cause.SLOW_DRAWING, 2)), null, END,
 				true, s, WhenSmooth.SHOW, true), Level.BAD, Icon.PC, "Low FPS", "Your PC");
-			assertRow(s, "5 Memory pause, now Memory stall", m.update(condition(Cause.GC_PAUSE, "p"), null, null,
-				LATER, true, s, WhenSmooth.SHOW, true), Level.WARN, Icon.MEMORY, "Memory stall", "The client");
+			assertRow(s, "5 Memory pause, now Client froze", m.update(condition(Cause.CLIENT_BUSY, "p"), null, null,
+				LATER, true, s, WhenSmooth.SHOW, true), Level.WARN, Icon.PC, "Client froze", "Your PC");
 			assertRow(s, "6 Not sure", m.update(v2(FOUR_MIN), openLag(x(3)), null, END, true, s, WhenSmooth.SHOW,
 				true), Level.BAD, Icon.UNKNOWN, "Lag", "Can't tell why");
 			assertRow(s, "7 Still measuring", m.update(measuring(), null, null, LATER, true, s, WhenSmooth.SHOW,
@@ -511,11 +509,10 @@ public class BadgeModelTest
 		{
 			assertNumbers(c.id(), judged(c, 0), Icon.LINE, new Ev(), "Ping 310 ms, ticks 1,240 ms");
 		}
-		for (Cause c : new Cause[] {Cause.CLIENT_BUSY, Cause.CLIENT_WAITING, Cause.MAP_LOAD})
+		for (Cause c : new Cause[] {Cause.CLIENT_BUSY, Cause.MAP_LOAD})
 		{
 			assertNumbers(c.id(), judged(c, 0), Icon.PC, new Ev(), "Worst frame 480 ms, 50 fps");
 		}
-		assertNumbers("G1", judged(Cause.GC_PAUSE, 0), Icon.MEMORY, new Ev(), "Pause 340 ms, memory 742 MB");
 		for (Cause c : new Cause[] {Cause.NOT_SURE, Cause.DELIVERY_GAP})
 		{
 			assertNumbers(c.id(), judged(c, 0), Icon.UNKNOWN, new Ev().worstFrame(170),
@@ -530,7 +527,6 @@ public class BadgeModelTest
 	{
 		final Verdict n3 = judged(Cause.UPLOAD_LOSS, 0);
 		final Verdict s3 = judged(Cause.CLIENT_BUSY, 0);
-		final Verdict g1 = judged(Cause.GC_PAUSE, 0);
 		assertNumbers("WORLD, no tick", w1(0), Icon.WORLD, new Ev().worstTick(-1), "Ping 41 ms");
 		assertNumbers("WORLD, no ping", w1(0), Icon.WORLD, new Ev().rtt(-1), "Ticks 1,240 ms");
 		assertNumbers("WORLD, neither", w1(0), Icon.WORLD, new Ev().worstTick(-1).rtt(-1), "");
@@ -540,11 +536,6 @@ public class BadgeModelTest
 		assertNumbers("PC, no worst frame", s3, Icon.PC, new Ev().worstFrame(-1), "50 fps");
 		assertNumbers("PC, no fps", s3, Icon.PC, new Ev().fps(-1), "Worst frame 480 ms");
 		assertNumbers("PC, neither", s3, Icon.PC, new Ev().worstFrame(-1).fps(-1), "");
-		assertNumbers("MEMORY, pauses not measured", g1, Icon.MEMORY, new Ev().pause(-1), "Memory 742 MB");
-		assertNumbers("MEMORY, no heap", g1, Icon.MEMORY, new Ev().heap(-1), "Pause 340 ms");
-		assertNumbers("MEMORY, measured and none: 0 prints", g1, Icon.MEMORY, new Ev().pause(0),
-			"Pause 0 ms, memory 742 MB");
-		assertNumbers("MEMORY, neither", g1, Icon.MEMORY, new Ev().pause(-1).heap(-1), "");
 		assertNumbers("UNKNOWN, no tick", x(0), Icon.UNKNOWN, new Ev().worstTick(-1).worstFrame(170),
 			"Worst frame 170 ms");
 		assertNumbers("UNKNOWN, no worst frame", x(0), Icon.UNKNOWN, new Ev().worstFrame(-1), "Ticks 1,240 ms");
@@ -656,7 +647,7 @@ public class BadgeModelTest
 	{
 		final BadgeModel m = new BadgeModel();
 		final LagEvent closed = new Ev().id(0).verdict(w1(0)).build();
-		final LagEvent open = new Ev().id(1).span(END + 5, END + 5).open(true).verdict(judged(Cause.GC_PAUSE, 1))
+		final LagEvent open = new Ev().id(1).span(END + 5, END + 5).open(true).verdict(judged(Cause.CLIENT_BUSY, 1))
 			.build();
 		step(m, f1(), open, closed, END + 5);
 		assertEquals(W1_LINE, m.takeChatLine());
@@ -712,9 +703,9 @@ public class BadgeModelTest
 
 	// ---------------------------------------------------------------- the seam
 
-	/** {@code view()} is one volatile read that allocates nothing; the model keeps four things between calls. */
+	/** {@code view()} is one volatile read; the model keeps four things between calls. */
 	@Test
-	public void viewIsOneVolatileReadThatAllocatesNothing()
+	public void viewIsOneVolatileRead()
 	{
 		int kept = 0;
 		int views = 0;
@@ -733,20 +724,6 @@ public class BadgeModelTest
 		}
 		assertEquals("one field holds the view", 1, views);
 		assertEquals("four things kept between calls (contract 7, L10)", 4, kept);
-
-		final com.sun.management.ThreadMXBean bean = allocationBean();
-		Assume.assumeTrue("this JVM does not count allocated bytes", bean != null);
-		final BadgeModel m = new BadgeModel();
-		step(m, v2(FOUR_MIN), new Ev().open(true).verdict(w1(0)).build(), null, END);
-		// The JIT's first compile of the loop may count a few bytes on this thread once (measured: 96 bytes in the
-		// first run, then 0), so the million reads are repeated until a run is clean. Every read is stored where
-		// it escapes, so a view() that allocated would allocate in EVERY run and could never read 0.
-		long least = Long.MAX_VALUE;
-		for (int run = 0; run < 10 && least != 0; run++)
-		{
-			least = Math.min(least, allocatedByAMillionReads(bean, m));
-		}
-		assertEquals("a million reads of view()", 0, least);
 	}
 
 	// ---------------------------------------------------------------- helpers
@@ -901,48 +878,10 @@ public class BadgeModelTest
 			-1, null, null);
 	}
 
-	/** The bytes this thread allocates over a million reads of {@code view()}, each kept where it escapes. */
-	private static long allocatedByAMillionReads(com.sun.management.ThreadMXBean bean, BadgeModel m)
-	{
-		final BadgeView[] kept = new BadgeView[1];
-		long sink = 0;
-		final long thread = Thread.currentThread().getId();
-		bean.getThreadAllocatedBytes(thread);
-		final long before = bean.getThreadAllocatedBytes(thread);
-		for (int i = 0; i < 1_000_000; i++)
-		{
-			kept[0] = m.view();
-			sink += kept[0].line1.length();
-		}
-		final long after = bean.getThreadAllocatedBytes(thread);
-		assertEquals("every read is the view", 9_000_000L, sink);
-		return after - before;
-	}
-
-	/** The allocation counter of this JVM, or null when it has none (test code only). */
-	private static com.sun.management.ThreadMXBean allocationBean()
-	{
-		final java.lang.management.ThreadMXBean bean = ManagementFactory.getThreadMXBean();
-		if (!(bean instanceof com.sun.management.ThreadMXBean))
-		{
-			return null;
-		}
-		final com.sun.management.ThreadMXBean sun = (com.sun.management.ThreadMXBean) bean;
-		if (!sun.isThreadAllocatedMemorySupported())
-		{
-			return null;
-		}
-		if (!sun.isThreadAllocatedMemoryEnabled())
-		{
-			sun.setThreadAllocatedMemoryEnabled(true);
-		}
-		return sun;
-	}
-
 	/**
 	 * A lag event, built by constructor (contract 7, L10). Its numbers start at the picture's: 50 fps, worst frame
-	 * 480 ms, worst tick 1,240 ms (the mean {@link #MEAN_TICK}), ping 41 ms (the highest 310 ms), a 340 ms pause and
-	 * 742 of 768 MB; closed, no verdict, id 0, the picture's span.
+	 * 480 ms, worst tick 1,240 ms (the mean {@link #MEAN_TICK}), ping 41 ms (the highest 310 ms); closed, no verdict,
+	 * id 0, the picture's span.
 	 */
 	private static final class Ev
 	{
@@ -956,8 +895,6 @@ public class BadgeModelTest
 		private int worstTickGapMs = 1240;
 		private int rttMs = 41;
 		private int rttMaxMs = 310;
-		private int gcPauseMs = 340;
-		private int heapUsedMb = 742;
 
 		Ev id(long v)
 		{
@@ -1014,23 +951,11 @@ public class BadgeModelTest
 			return this;
 		}
 
-		Ev pause(int v)
-		{
-			gcPauseMs = v;
-			return this;
-		}
-
-		Ev heap(int v)
-		{
-			heapUsedMb = v;
-			return this;
-		}
-
 		LagEvent build()
 		{
 			return new LagEvent(id, startSec, endSec, WALL0 + startSec * 1000, Trigger.TICK_OFF.bit(),
 				Trigger.TICK_OFF, 416, 0, 0, 0, fps, worstFrameMs, MEAN_TICK, worstTickGapMs, 640, rttMs, rttMaxMs,
-				41, 900, 0, gcPauseMs, heapUsedMb, 768, 37, 95, isOpen, false, verdict);
+				41, 900, 0, isOpen, false, verdict);
 		}
 	}
 }

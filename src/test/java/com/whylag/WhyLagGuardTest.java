@@ -33,8 +33,10 @@ import static org.junit.Assert.fail;
  * {@code java.util.concurrent} are allowed - less two of them, {@code java.lang.management} and
  * {@code java.lang.reflect}: no RuneLite, no AWT or Swing, no management beans, no reflection, no {@code com.sun},
  * no lombok - so every rule in it can be tested without a client and moved without one.</li>
- * <li>{@code java.lang.management}, {@code javax.management} and {@code com.sun.management} appear in ONE file,
- * {@code host/ManagementHostProbe.java}, so a reviewer who refuses them deletes one file and one line.</li>
+ * <li>The Plugin Hub's rule (PR #17424, "Reflection and using the management/runtime packages isn't allowed"): no
+ * plugin file names the management or runtime packages or reads the JVM's host, no file uses reflection or asks for a
+ * class by name or for another plugin's object, and none reads the environment. The twelve patterns of {@link #HUB}
+ * each come with a sample that must bite.</li>
  * <li>No {@code Thread.sleep} anywhere (T8).</li>
  * <li>No {@code Ping.ping}, no socket, no process, no file access (T14): main code sends no packet and writes no
  * file. {@code java.io.FileDescriptor} is allowed - it is what {@code Client.getSocketFD()} answers.</li>
@@ -57,10 +59,6 @@ public class WhyLagGuardTest
 	private static final String CORE_RULE = "core may import the java.lang, java.util and java.time package trees,"
 		+ " less management and reflect (contract 2)";
 
-	/** The management names, and the one file that may hold them. */
-	private static final String[] MANAGEMENT = {"java.lang.management", "javax.management", "com.sun.management"};
-	private static final String MANAGEMENT_FILE = "host/ManagementHostProbe.java";
-
 	private static final Pattern IMPORT = Pattern.compile(
 		"(?m)^\\s*import\\s+(?:static\\s+)?([A-Za-z_$][\\w$]*(?:\\s*\\.\\s*(?:[A-Za-z_$][\\w$]*|\\*))*)\\s*;");
 
@@ -69,6 +67,12 @@ public class WhyLagGuardTest
 
 	/** Packets, sockets, processes and files (T14), each with the samples it must catch. */
 	private static final Map<Pattern, String[]> NO_IO = new LinkedHashMap<>();
+
+	/**
+	 * The Plugin Hub's rule - the management and runtime packages, reflection, plugin objects and the environment -
+	 * each pattern with the samples it must catch.
+	 */
+	private static final Map<Pattern, String[]> HUB = new LinkedHashMap<>();
 
 	static
 	{
@@ -95,6 +99,31 @@ public class WhyLagGuardTest
 		NO_IO.put(Pattern.compile("java\\.nio\\.file"), new String[] {"import java.nio.file.Files;",
 			"java.nio.file.Paths.get(x)"});
 		NO_IO.put(Pattern.compile("\\bFileChannel\\b"), new String[] {"FileChannel.open(p)"});
+
+		HUB.put(Pattern.compile("java\\.lang\\.management"),
+			new String[] {"import java.lang.management.ManagementFactory;", "java.lang.management.MemoryMXBean bean;"});
+		HUB.put(Pattern.compile("javax\\.management"), new String[] {"import javax.management.ObjectName;",
+			"new javax.management.ObjectName(n)"});
+		HUB.put(Pattern.compile("com\\.sun\\."), new String[] {"import com.sun.management.OperatingSystemMXBean;",
+			"(com.sun.management.GarbageCollectionNotificationInfo) x"});
+		HUB.put(Pattern.compile("java\\.lang\\.reflect"), new String[] {"import java.lang.reflect.Method;",
+			"java.lang.reflect.Field f;"});
+		HUB.put(Pattern.compile("Runtime\\s*\\.\\s*getRuntime"), new String[] {"Runtime.getRuntime().maxMemory()",
+			"Runtime . getRuntime ( ).availableProcessors()"});
+		HUB.put(Pattern.compile("Class\\s*\\.\\s*forName"), new String[] {"Class.forName(name)",
+			"Class . forName (\"x\")"});
+		HUB.put(Pattern.compile("getDeclared\\w*\\("), new String[] {"type.getDeclaredMethods()",
+			"type.getDeclaredField(\"x\")", "type.getDeclaredConstructor()"});
+		HUB.put(Pattern.compile("\\.getMethod\\s*\\("), new String[] {"type.getMethod(\"run\")",
+			"type.getMethod (\"run\")"});
+		HUB.put(Pattern.compile("\\.invoke\\s*\\("), new String[] {"method.invoke(target)",
+			"method.invoke (target, 1)"});
+		HUB.put(Pattern.compile("getClass\\s*\\(\\s*\\)"), new String[] {"plugin.getClass().getName()",
+			"getClass ( )"});
+		HUB.put(Pattern.compile("\\bPluginManager\\b"),
+			new String[] {"import net.runelite.client.plugins.PluginManager;", "private PluginManager pluginManager;"});
+		HUB.put(Pattern.compile("System\\s*\\.\\s*getenv"), new String[] {"System.getenv(\"PATH\")",
+			"System . getenv()"});
 	}
 
 	// ---------------------------------------------------------------- the rules
@@ -135,23 +164,40 @@ public class WhyLagGuardTest
 			.isEmpty());
 	}
 
+	/**
+	 * The Hub's rule: every pattern bites on each of its samples, there are exactly the twelve of the plan, and the
+	 * whole of {@code src/main/java/com/whylag} is clean of all of them.
+	 */
 	@Test
-	public void managementOnlyInOneFile() throws IOException
+	public void theHubsRuleIsKept() throws IOException
 	{
-		final List<String> offences = new ArrayList<>();
-		for (Map.Entry<String, String> e : sources("").entrySet())
-		{
-			if (e.getKey().equals(MANAGEMENT_FILE))
-			{
-				continue;
-			}
-			final String code = withoutComments(e.getValue());
-			for (String name : MANAGEMENT)
-			{
-				offences.addAll(hits(e.getKey(), code, named(name)));
-			}
-		}
-		assertNoOffence("the management beans live in " + MANAGEMENT_FILE + " alone (contract 2)", offences);
+		assertEquals("the twelve patterns of the plan", 12, HUB.size());
+		provePatternsBite(HUB);
+		assertNoOffence("no management or runtime package, no reflection, no plugin object, no environment"
+			+ " (the Plugin Hub's rule, PR #17424)", scan(HUB));
+	}
+
+	/**
+	 * The HUB patterns read code, not prose: a comment and a string that name a banned word do not trip them, and
+	 * a word that only contains one does not either.
+	 */
+	@Test
+	public void theHubsPatternsReadCodeOnly()
+	{
+		final String src = String.join("\n",
+			"package com.whylag;",                                              // 1
+			"// java.lang.management and Runtime.getRuntime() in a comment",    // 2
+			"/* PluginManager, getClass() and System.getenv in a block */",     // 3
+			"class C",                                                          // 4
+			"{",                                                                // 5
+			"\tString s = \"Class.forName and .invoke( in a string\";",        // 6
+			"\tObject o = new PluginManagerLike();",                            // 7
+			"\tint n = runtimeCount();",                                        // 8
+			"\tvoid invokeLater() { clientThread.invokeLater(r); }",            // 9
+			"}");                                                               // 10
+		assertTrue("prose and lookalikes are not offences", scanOne("C.java", withoutComments(src), HUB).isEmpty());
+		final String bad = "package com.whylag;\nclass C\n{\n\tObject o = plugin.getClass();\n}\n";
+		assertEquals(1, scanOne("C.java", withoutComments(bad), HUB).size());
 	}
 
 	@Test

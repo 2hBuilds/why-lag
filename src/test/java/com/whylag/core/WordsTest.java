@@ -21,7 +21,7 @@ public class WordsTest
 	private static SettingsView settings(Renderer renderer, String antiAliasing, int drawDistance, int mapLoading)
 	{
 		return new SettingsView(renderer, false, false, 0, false, 0, false, "", 0, drawDistance, antiAliasing,
-			mapLoading, 60, 768, MemorySource.MANAGEMENT, Os.WINDOWS, "");
+			mapLoading, 60, Os.WINDOWS, "");
 	}
 
 	private static SettingsView[] everySettings()
@@ -33,7 +33,6 @@ public class WordsTest
 			settings(Renderer.GPU, "", 32_767, 32_767),
 			settings(Renderer.HD, "AN_ANTI_ALIASING_NAME_FAR_TOO_LONG_TO_PRINT_ON_THE_CARD", 999, 999),
 			settings(Renderer.UNKNOWN, "", 0, 0),
-			VerdictCauseTest.runtimeMemory(),
 		};
 	}
 
@@ -48,12 +47,8 @@ public class WordsTest
 		e.lastTickSec = 0;
 		e.frameGapMs = 32_767;
 		e.frameLimitMs = 200;
-		e.gcMs = 2_000_000;
-		e.gcCoverPct = 100;
-		e.gcOverlapMs = 2_000_000;
 		e.loadMs = Integer.MAX_VALUE;
 		e.loads = 32_767;
-		e.busyPm = 1000;
 		e.capFps = 32_767;
 		e.capIntervalMs = 1;
 		e.capSelfSet = true;
@@ -83,8 +78,6 @@ public class WordsTest
 		e.tickOffMs = Integer.MAX_VALUE;
 		e.tickWindowMedianMs = Integer.MAX_VALUE;
 		e.ticksInWindow = 6000;
-		e.heapUsedMb = 32_767;
-		e.heapMaxMb = Integer.MAX_VALUE;
 		e.durationS = 100_000;
 		e.world = 32_767;
 		e.beforeRtt = 32_767;
@@ -113,10 +106,8 @@ public class WordsTest
 		blind.rttKnown = false;
 		blind.rttSpike = Evidence.NO_DATA;
 		out.add(blind);
-		// G1 without its memory part, S3 without a clean-up part, N1 without a usual.
+		// N1 without a usual.
 		final Evidence bare = largest();
-		bare.heapMaxMb = -1;
-		bare.gcOverlapMs = 0;
 		bare.rttUsual = -1;
 		out.add(bare);
 		// A ping judged and clean: N6's longer sentence, "Frames and ping were fine.".
@@ -192,21 +183,23 @@ public class WordsTest
 		{
 			assertTrue(t[0] + " headline: " + t[1], t[1].length() <= 32);
 			assertTrue(t[0] + " proof: " + t[2], t[2].length() <= 64);
-			assertTrue(t[0] + " fix: " + t[3], t[3].length() <= 50);
+			assertTrue(t[0] + " fix: " + t[3], t[3].length() <= 61);
 			longestHeadline = Math.max(longestHeadline, t[1].length());
 			longestProof = Math.max(longestProof, t[2].length());
 			longestFix = Math.max(longestFix, t[3].length());
 		}
 		assertEquals(32, Words.HEADLINE_MAX);
 		assertEquals(64, Words.PROOF_MAX);
-		assertEquals(50, Words.FIX_MAX);
+		assertEquals("S3's fix, the longest, is two sentences", 61, Words.FIX_MAX);
 		// The limits are met by the words as written, not by cutting: the longest of each kind is a whole sentence.
 		assertEquals("World 999 is struggling, not you", Words.headline(Rules.W1, largest(), SESSION));
 		assertEquals(32, longestHeadline);
 		assertEquals("Ticks 600 to 9,990+ ms for 120 s. Ping stayed 999 ms, 999 fps.",
 			Words.proof(Rules.W1, largest(), everySettings()[0]));
 		assertTrue(longestProof <= 64 && longestProof >= 62);
-		assertEquals("Hop worlds. If it follows you, it is your line.".length(), longestFix);
+		assertEquals("Turn plugins off one at a time; try more memory for RuneLite.".length(), longestFix);
+		assertEquals("Turn plugins off one at a time; try more memory for RuneLite.",
+			Words.fix(Rules.S3, largest(), everySettings()[0]));
 
 		// The two fillers printed in seconds with a decimal are clamped to the largest length of 6.4, 120 s.
 		assertEquals("Map loading took 120.0 s", Words.headline(Rules.S1, largest(), SESSION));
@@ -383,16 +376,10 @@ public class WordsTest
 		assertTrue(Words.proof(Rules.W1, e, cpu).startsWith("Ticks 600 to 940+ ms"));
 		assertEquals("World 416 is struggling, not you", Words.headline(Rules.W1, e, SESSION));
 
-		// S3's clean-up part is gcOverlapMs, the part of the freeze that was covered - not the pause's length.
+		// S3 is the one client-stall row: the freeze, and what was fine beside it.
 		e.frameGapMs = 950;
-		e.gcMs = 400;
-		e.gcOverlapMs = 150;
-		assertEquals("A 950 ms freeze. 150 ms was memory clean-up.", Words.proof(Rules.S3, e, cpu));
-		e.gcOverlapMs = 0;
 		assertEquals("A 950 ms freeze. Connection and world were fine.", Words.proof(Rules.S3, e, cpu));
-		e.gcOverlapMs = -1;
-		assertEquals("A 950 ms freeze. Connection and world were fine.", Words.proof(Rules.S3, e, cpu));
-		assertEquals("A 950 ms freeze, but the client was not busy.", Words.proof(Rules.S4, e, cpu));
+		assertEquals("The client itself stalled", Words.headline(Rules.S3, e, SESSION));
 
 		// S1: Fmt.tenths of the whole run; the loads are counted back from the event's END.
 		e.loadMs = 2400;
@@ -436,17 +423,6 @@ public class WordsTest
 		e.rttUsual = -1;
 		e.rttSpike = Evidence.NO_DATA;
 
-		// G1: the pause, then used and limit; the memory part is left out when a heap figure is -1.
-		e.gcMs = 340;
-		e.heapUsedMb = 742;
-		e.heapMaxMb = 768;
-		assertEquals("A 340 ms pause. Memory 742 of 768 MB.", Words.proof(Rules.G1, e, cpu));
-		e.heapMaxMb = -1;
-		assertEquals("A 340 ms pause.", Words.proof(Rules.G1, e, cpu));
-		e.heapMaxMb = 768;
-		e.heapUsedMb = -1;
-		assertEquals("A 340 ms pause.", Words.proof(Rules.G1, e, cpu));
-
 		// F1: the cap and who set it.
 		e.capFps = 50;
 		e.capLabel = CapSource.FPS_CONTROL.label();
@@ -481,7 +457,7 @@ public class WordsTest
 		e.tickOffMs = 240;
 		e.rttKnown = true;
 		assertEquals("Ticks ran 240 ms off. Cause not measured.", Words.cantTellProof(e, null, null));
-		e.first = Trigger.GC_PAUSE;
+		e.first = Trigger.FRAME_GAP;
 		e.frameGapMs = 170;
 		assertEquals("A 170 ms freeze. Its cause was not measured.", Words.cantTellProof(e, null, null));
 		e.first = Trigger.RESENT;
@@ -489,16 +465,14 @@ public class WordsTest
 		e.rttKnown = false;
 		assertEquals("The connection wobbled. Cause not measured. No ping data.",
 			Words.cantTellProof(e, null, null));
-		assertEquals("It was memory clean-up or lost packets. No ping data.",
-			Words.cantTellProof(e, Cause.GC_PAUSE, Cause.UPLOAD_LOSS));
-		assertEquals("too long with it: left out", "It was your line or the server or the client waiting.",
-			Words.cantTellProof(e, Cause.DELIVERY_GAP, Cause.CLIENT_WAITING));
+		assertEquals("It was a client stall or lost packets. No ping data.",
+			Words.cantTellProof(e, Cause.CLIENT_BUSY, Cause.UPLOAD_LOSS));
+		assertEquals("too long with it: left out", "It was your line or the server or the weekly update.",
+			Words.cantTellProof(e, Cause.DELIVERY_GAP, Cause.WEEKLY_UPDATE));
 
-		// W1c and G2.
+		// W1c.
 		e.tickWindowMedianMs = 620;
 		assertEquals("Ticks take 620 ms here. Ping and frames are fine.", Words.proof(Rules.W1C, e, cpu));
-		e.heapMaxMb = 256;
-		assertEquals("The client may use only 256 MB. Default is 768.", Words.proof(Rules.G2, e, cpu));
 	}
 
 	/**
@@ -541,22 +515,19 @@ public class WordsTest
 	public void ruledOutNamesWhatWasMeasuredAndClean()
 	{
 		final VerdictCauseTest.Case stall = VerdictCauseTest.s3();
-		assertEquals("Memory, ping and ticks were fine.", stall.verdict().ruledOut);
+		assertEquals("its own group, the frames, is not named", "Ping and ticks were fine.",
+			stall.verdict().ruledOut);
 		final VerdictCauseTest.Case world = VerdictCauseTest.w1();
-		assertEquals("its own group, the ticks, is not named", "Memory, frames and ping were fine.",
+		assertEquals("its own group, the ticks, is not named", "Frames and ping were fine.",
 			world.verdict().ruledOut);
 		final VerdictCauseTest.Case loss = VerdictCauseTest.n3();
-		assertEquals("Memory, frames and ticks were fine.", loss.verdict().ruledOut);
+		assertEquals("Frames and ticks were fine.", loss.verdict().ruledOut);
 
 		final Evidence e = new Evidence();
 		e.event = true;
 		assertEquals("nothing known, nothing said", "", Words.ruledOut(Cause.CLIENT_BUSY, e, everySettings()[0]));
-		assertEquals("Memory pauses not measured.", Words.ruledOut(Cause.CLIENT_BUSY, e,
-			VerdictCauseTest.runtimeMemory()));
 		e.rttSpike = Evidence.NO;
 		assertEquals("Ping was fine.", Words.ruledOut(Cause.CLIENT_BUSY, e, everySettings()[0]));
-		assertEquals("Ping was fine. Memory pauses not measured.", Words.ruledOut(Cause.CLIENT_BUSY, e,
-			VerdictCauseTest.runtimeMemory()));
 		e.framesClean = true;
 		assertEquals("Frames and ping were fine.", Words.ruledOut(Cause.NOT_SURE, e, everySettings()[0]));
 

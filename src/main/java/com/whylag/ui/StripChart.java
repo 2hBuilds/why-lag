@@ -20,25 +20,22 @@ import javax.swing.JComponent;
 import javax.swing.ToolTipManager;
 
 /**
- * Block 5a, the five stacked lanes behind the "Graphs" row (contract 5.3, the lanes of picture 15): 213 x 166, in
- * the layout only while that row is open. Five lanes 27 px high at y 0, 30, 60, 90 and 120 - frame rate, ticks,
- * ping, memory, CPU - and the time axis from y 150.
+ * Block 5a, the three stacked lanes behind the "Graphs" row (contract 5.3, the lanes of picture 15): 213 x 106, in
+ * the layout only while that row is open. Three lanes 27 px high at y 0, 30 and 60 - frame rate, ticks, ping - and
+ * the time axis from y 90.
  *
  * <p>A lane: a {@link Ui#CARD} ground; its label in RuneScape Small {@link Ui#LABEL} at x 3, baseline y + 11; its
  * value right-aligned at x 210 on the same baseline, with a 1 px black shadow, in its level's text colour (one "-"
  * in {@link Ui#LABEL} when it has none); its line, one point per column in the rows y + 13 .. y + 25, coloured per
- * column by the strip's levels, with a gap where a column has no data. The CPU lane draws the game's share first,
- * grey, and the whole PC's line over it; its value is two halves, the PC's at x 210 and the game's ending 11 px to
- * its left (right-aligned at x 210 when alone). With an event selected the five values are that event's
- * ({@link EventView}).
+ * column by the strip's levels, with a gap where a column has no data. With an event selected the three values are
+ * that event's ({@link EventView}).
  *
  * <p>Bands: each event of the range, from the column of its first millisecond to that of its last, at least 2 px
- * wide - {@link Ui#BAND} across the five lanes, {@link Ui#BAND_CULPRIT} in its cause's lane, and for the selected
- * event {@link Ui#BAND_SELECTED} with a 1 px orange frame from y 0 to y 147. The axis: a 1 px {@link Ui#RULE} line
- * at y 150, 3 px ticks at x 0, 71, 142 and 212, labels at baseline 164 ("-60 s", "-40 s", "-20 s" for one minute,
+ * wide - {@link Ui#BAND} across the three lanes, {@link Ui#BAND_CULPRIT} in its cause's lane, and for the selected
+ * event {@link Ui#BAND_SELECTED} with a 1 px orange frame from y 0 to y 87. The axis: a 1 px {@link Ui#RULE} line
+ * at y 90, 3 px ticks at x 0, 71, 142 and 212, labels at baseline 104 ("-60 s", "-40 s", "-20 s" for one minute,
  * else the clock of each tick's column; while stretched, that clock with seconds) and "now" in {@link Ui#TEXT} at
- * the right. The tooltip over the lanes names
- * a column's clock and its six numbers.
+ * the right. The tooltip over the lanes names a column's clock and its three numbers.
  *
  * <p><b>Width.</b> The data is always {@link #COLUMNS} (213) columns; the chart may be wider (230 in the client) and
  * paints to its own width ({@link Ui#widthOf}). Pixel x of a chart {@code width} wide is column
@@ -49,7 +46,7 @@ import javax.swing.ToolTipManager;
  * ({@link #tick}); the hover reads its column with the same map.
  *
  * <p>The lane texts are drawn last, each on a flat backing, so no band tint and no frame line runs through their
- * letters (picture 18 backs its Game label so), and every lane text meets the 4.5:1 rule on the card's ground.
+ * letters, and every lane text meets the 4.5:1 rule on the card's ground.
  *
  * <p>Choice: a column starts at the first pixel that maps to it (the ceiling), so painting and hovering agree to the
  * pixel; the axis label under a tick is the clock of the column that pixel maps to.
@@ -63,10 +60,10 @@ import javax.swing.ToolTipManager;
  */
 final class StripChart extends JComponent
 {
-	static final int HEIGHT = 166;
-	static final int LANES = 5;
+	static final int HEIGHT = 106;
+	static final int LANES = 3;
 	static final int LANE_H = 27;
-	static final int[] LANE_Y = {0, 30, 60, 90, 120};
+	static final int[] LANE_Y = {0, 30, 60};
 	static final int LABEL_X = 3;
 	static final int TEXT_BASELINE = 11;
 	/** A lane's value is right-aligned here in the 213 px chart; in a wider one 3 px in from the right edge. */
@@ -74,24 +71,20 @@ final class StripChart extends JComponent
 	/** The line's rows in a lane: y + 13 .. y + 25. */
 	static final int LINE_TOP = 13;
 	static final int LINE_BOTTOM = 25;
-	/** The gap between the CPU lane's two halves. */
-	static final int HALF_GAP = 11;
-	static final int AXIS_Y = 150;
+	static final int AXIS_Y = 90;
 	static final int TICK_LEN = 3;
 	/** The ticks: the start, a third, two thirds and the end (x 0, 71, 142 and 212 at 213). */
 	static final int TICK_COUNT = 4;
-	static final int AXIS_BASELINE = 164;
+	static final int AXIS_BASELINE = 104;
 	/** The selected band's frame runs from y 0 to this row. */
-	static final int FRAME_BOTTOM = 147;
+	static final int FRAME_BOTTOM = 87;
 	/** The tooltip answers from y 0 to this row. */
-	static final int TIP_BOTTOM = 146;
+	static final int TIP_BOTTOM = 86;
 	static final int COLUMNS = Thresholds.STRIP_COLUMNS;
 	static final int MIN_BAND = 2;
 	static final String DASH = "-";
 	static final String NOW = "now";
 	static final String[] ONE_MINUTE = {"-60 s", "-40 s", "-20 s"};
-	static final String NO_CPU_DATA = "No CPU data on this PC";
-	static final String NOT_LOGGED_IN = "Not logged in";
 	/** What covers a column of a lane, weakest first: nothing, a band, the selected band, the culprit's band. */
 	private static final byte NO_BAND = 0;
 	private static final byte PLAIN_BAND = 1;
@@ -102,7 +95,6 @@ final class StripChart extends JComponent
 	private LagEvent picked;
 	private final String[] values = new String[LANES];
 	private final Level[] valueLevels = new Level[LANES];
-	private String game = "";
 	/** Four ints a band: first column, last column, culprit lane (-1 none), 1 when it is the selected event. */
 	private int[] bands = new int[0];
 	private int bandCount;
@@ -132,7 +124,6 @@ final class StripChart extends JComponent
 				values[i] = i < v.length && v[i] != null ? v[i] : "";
 				valueLevels[i] = i < l.length && l[i] != null ? l[i] : Level.NO_DATA;
 			}
-			game = EventView.cpuGameValue(selected);
 		}
 		else
 		{
@@ -142,8 +133,6 @@ final class StripChart extends JComponent
 				values[i] = strip == null ? "" : strip.now;
 				valueLevels[i] = strip == null || strip.nowLevel == null ? Level.NO_DATA : strip.nowLevel;
 			}
-			final Strip cpu = strip(Lane.CPU.ordinal());
-			game = cpu == null ? "" : cpu.now2;
 		}
 		placeBands();
 	}
@@ -158,12 +147,6 @@ final class StripChart extends JComponent
 	String value(int lane)
 	{
 		return values[lane];
-	}
-
-	/** The CPU lane's Game half as painted: "" = none. */
-	String gameValue()
-	{
-		return game;
 	}
 
 	/** The columns of the band of the event with that id, {first, last}; null when it has none. */
@@ -285,68 +268,33 @@ final class StripChart extends JComponent
 		{
 			return null;
 		}
-		if (e.getY() >= LANE_Y[Lane.CPU.ordinal()] && cpuLaneEmpty())
-		{
-			return anyColumn() ? NO_CPU_DATA : NOT_LOGGED_IN;
-		}
 		return columnText(columnAt(e.getX(), Ui.widthOf(this)));
 	}
 
-	/** "21:47:30 - 50 fps, ticks 952 ms, ping 41 ms, memory 30 %, PC 37 %, game 95 %" for column c. */
+	/** "21:47:30 - 50 fps, ticks 952 ms, ping 41 ms" for column c. */
 	String columnText(int c)
 	{
 		final String clock = validRange()
 			? Fmt.clockSeconds(Strip.columnStart(snapshot.rangeStartWallMs, snapshot.rangeEndWallMs, c), snapshot.zone)
 			: DASH;
-		final int fps = at(strip(Lane.FRAME_RATE.ordinal()), c, false);
-		final int ticks = at(strip(Lane.TICKS.ordinal()), c, false);
-		final int ping = at(strip(Lane.PING.ordinal()), c, false);
-		final Strip memory = strip(Lane.MEMORY.ordinal());
-		final int heap = at(memory, c, false);
-		final int pc = at(strip(Lane.CPU.ordinal()), c, false);
-		final int gameShare = at(strip(Lane.CPU.ordinal()), c, true);
-		final String memoryText = heap == Strip.NONE || memory.max <= 0
-			? "memory -"
-			: "memory " + ((long) heap * 100 / memory.max) + " %";
+		final int fps = at(strip(Lane.FRAME_RATE.ordinal()), c);
+		final int ticks = at(strip(Lane.TICKS.ordinal()), c);
+		final int ping = at(strip(Lane.PING.ordinal()), c);
 		return clock + " - "
 			+ (fps == Strip.NONE ? "fps -" : Fmt.thousands(fps) + " fps") + ", "
 			+ (ticks == Strip.NONE ? "ticks -" : "ticks " + Fmt.thousands(ticks) + " ms") + ", "
-			+ (ping == Strip.NONE ? "ping -" : "ping " + Fmt.thousands(ping) + " ms") + ", "
-			+ memoryText + ", "
-			+ (pc == Strip.NONE ? "PC -" : "PC " + Fmt.thousands(pc) + " %") + ", "
-			+ (gameShare == Strip.NONE ? "game -" : "game " + Fmt.thousands(gameShare) + " %");
+			+ (ping == Strip.NONE ? "ping -" : "ping " + Fmt.thousands(ping) + " ms");
 	}
 
-	/** Column c of a strip's first or second series; {@link Strip#NONE} when it has none. */
-	private static int at(Strip s, int c, boolean second)
+	/** Column c of a strip; {@link Strip#NONE} when it has none. */
+	private static int at(Strip s, int c)
 	{
 		if (s == null)
 		{
 			return Strip.NONE;
 		}
-		final int[] v = second ? s.values2 : s.values;
+		final int[] v = s.values;
 		return v == null || c < 0 || c >= v.length ? Strip.NONE : v[c];
-	}
-
-	/** True when both series of the CPU lane are {@link Strip#NONE} in every column. */
-	private boolean cpuLaneEmpty()
-	{
-		final Strip cpu = strip(Lane.CPU.ordinal());
-		return cpu == null || (empty(cpu.values) && empty(cpu.values2));
-	}
-
-	/** True when some column of some strip holds a value: some second of the range counts (contract 5.3). */
-	private boolean anyColumn()
-	{
-		for (int i = 0; i < LANES; i++)
-		{
-			final Strip s = strip(i);
-			if (s != null && (!empty(s.values) || !empty(s.values2)))
-			{
-				return true;
-			}
-		}
-		return false;
 	}
 
 	private static boolean empty(int[] v)
@@ -394,11 +342,7 @@ final class StripChart extends JComponent
 			{
 				continue;
 			}
-			if (s.values2 != null)
-			{
-				line(g, s.values2, null, Ui.LABEL, LANE_Y[lane], s.min, s.max, width);
-			}
-			line(g, s.values, s.levels, null, LANE_Y[lane], s.min, s.max, width);
+			line(g, s.values, s.levels, LANE_Y[lane], s.min, s.max, width);
 		}
 		paintFrame(g, width);
 		for (int lane = 0; lane < LANES; lane++)
@@ -465,9 +409,8 @@ final class StripChart extends JComponent
 		}
 	}
 
-	/** One series: a point per column, joined to the column before by a vertical run; a gap at NONE. */
-	private static void line(Graphics2D g, int[] v, byte[] levels, Color fixed, int laneY, int min, int max,
-		int width)
+	/** One lane's line: a point per column, joined to the column before by a vertical run; a gap at NONE. */
+	private static void line(Graphics2D g, int[] v, byte[] levels, int laneY, int min, int max, int width)
 	{
 		if (v == null)
 		{
@@ -483,7 +426,7 @@ final class StripChart extends JComponent
 				continue;
 			}
 			final int y = yOf(v[c], laneY, min, max);
-			g.setColor(fixed != null ? fixed : columnColour(levels, c));
+			g.setColor(columnColour(levels, c));
 			final int top = joined ? Math.min(before, y) : y;
 			final int bottom = joined ? Math.max(before, y) : y;
 			g.fillRect(xOf(c, width), top, xOf(c + 1, width) - xOf(c, width), bottom - top + 1);
@@ -518,38 +461,13 @@ final class StripChart extends JComponent
 		final int valueRight = width - (Ui.WIDTH - VALUE_RIGHT);
 		final String label = Lane.values()[lane].label();
 		laneText(g, label, LABEL_X, y, Ui.LABEL, false, width);
-		if (lane != Lane.CPU.ordinal())
-		{
-			final String v = values[lane];
-			if (v.isEmpty() || DASH.equals(v))
-			{
-				dash(g, y, valueRight, width);
-			}
-			else
-			{
-				laneText(g, v, valueRight - Ui.width(Ui.RSS, v), y, Ui.textColour(valueLevels[lane]), true, width);
-			}
-			return;
-		}
-		final String pc = values[lane];
-		final boolean drawPc = !pc.isEmpty() && !DASH.equals(pc);
-		final boolean drawGame = !game.isEmpty();
-		if (!drawPc && !drawGame)
+		final String v = values[lane];
+		if (v.isEmpty() || DASH.equals(v))
 		{
 			dash(g, y, valueRight, width);
 			return;
 		}
-		int right = valueRight;
-		if (drawPc)
-		{
-			final int x = right - Ui.width(Ui.RSS, pc);
-			laneText(g, pc, x, y, Ui.textColour(valueLevels[lane]), true, width);
-			right = x - HALF_GAP;
-		}
-		if (drawGame)
-		{
-			laneText(g, game, right - Ui.width(Ui.RSS, game), y, Ui.LABEL, true, width);
-		}
+		laneText(g, v, valueRight - Ui.width(Ui.RSS, v), y, Ui.textColour(valueLevels[lane]), true, width);
 	}
 
 	private static void dash(Graphics2D g, int laneY, int valueRight, int width)

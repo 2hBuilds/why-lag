@@ -14,9 +14,8 @@ import static org.junit.Assert.assertTrue;
 /**
  * The detector (contract 6.1, 6.2, 3.4, 3.6; the test list of contract 7, L3): each trigger fires at its line and
  * not one below it; the named traps (a teleport, a long load, low frame rates, a cap of 4 fps, a click burst, a stale
- * RTT, an inferred collection, the frame gap limit of the second's own focus, a pause at a second's first ms); how
- * events open, merge, close and turn into conditions; what feeds the usuals; the event's own numbers, open and
- * closed; and the ids.
+ * RTT, the frame gap limit of the second's own focus); how events open, merge, close and turn into conditions; what
+ * feeds the usuals; the event's own numbers, open and closed; and the ids.
  *
  * <p>Every trace is a {@link Trace}; its steady second is 50 fps with a 22 ms worst frame, ticks every 600 ms from
  * session ms 0, a fresh RTT of 40, 900 bytes sent a second, on the CPU renderer (cap 50, so the frame gap limit is
@@ -69,17 +68,6 @@ public class LagDetectorTest
 		assertEquals(Trigger.FRAME_GAP.bit(), at.d.triggers(120));
 		assertEquals(Trigger.FRAME_GAP, at.rec.closed.get(0).first);
 		final Run below = run(Trace.steady(N).frameGap(120, 500, line - 1));
-		assertEquals(0, below.d.triggers(120));
-		assertTrue(below.rec.opened.isEmpty());
-	}
-
-	@Test
-	public void gcPauseFiresAtTheLine()
-	{
-		final Run at = run(Trace.steady(N).gcPause(120, 200, Thresholds.GC_PAUSE_MS, 400));
-		assertEquals(Trigger.GC_PAUSE.bit(), at.d.triggers(120));
-		assertEquals(Trigger.GC_PAUSE, at.rec.closed.get(0).first);
-		final Run below = run(Trace.steady(N).gcPause(120, 200, Thresholds.GC_PAUSE_MS - 1, 400));
 		assertEquals(0, below.d.triggers(120));
 		assertTrue(below.rec.opened.isEmpty());
 	}
@@ -260,7 +248,7 @@ public class LagDetectorTest
 	{
 		// FPS Control at 4 fps: the cap interval is 250, the frame gap limit 375 (C9).
 		final SettingsView capped = new SettingsView(Renderer.CPU, true, true, 4, false, 0, false, "", 0, 0, "", 0,
-			60, 768, MemorySource.MANAGEMENT, Os.WINDOWS, "");
+			60, Os.WINDOWS, "");
 		assertEquals("the premise", 375, capped.frameGapLimitMs(true));
 		final Trace t = Trace.steady(N).fps(100, 150, 4).tickLate(110, 250, true).tickLate(120, 250, false);
 		final Run r = run(t, capped);
@@ -292,19 +280,6 @@ public class LagDetectorTest
 		// The steady 900 a second is over CLICK_SENT_BYTES, but it is no JUMP over the quiet median.
 		final Run r = run(Trace.steady(N).usual(40).rtt(120, 120, spikeLine(40) + 60));
 		assertEquals(Trigger.RTT_SPIKE.bit(), r.d.triggers(120));
-	}
-
-	@Test
-	public void inferredCollectionFiresNothing()
-	{
-		final Run r = run(Trace.steady(N).gcInferred(120, 300));
-		assertTrue(r.rec.opened.isEmpty());
-		assertAllQuiet(r, 0, N - 1);
-		final SettingsView runtime = settingsWith(768, MemorySource.RUNTIME);
-		final Run fallback = run(Trace.steady(N).gcInferred(120, 300).gcInferred(150, 280), runtime);
-		assertTrue(fallback.rec.opened.isEmpty());
-		// A KNOWN pause at the same place does fire.
-		assertEquals(Trigger.GC_PAUSE.bit(), run(Trace.steady(N).gcPause(120, 0, 150, 300)).d.triggers(120));
 	}
 
 	@Test
@@ -359,7 +334,7 @@ public class LagDetectorTest
 	{
 		// FPS Control's limit on at 3 and its unfocused limit on at 60; GPU unlocked, V-Sync off, a target of 4.
 		final SettingsView v = new SettingsView(Renderer.GPU, true, true, 3, true, 60, true, "OFF", 4, 0, "", 0, 60,
-			768, MemorySource.MANAGEMENT, Os.WINDOWS, "");
+			Os.WINDOWS, "");
 		assertEquals("focused: FPS Control's 3", 499, v.frameGapLimitMs(true));
 		assertEquals("unfocused: the GPU's 4", 375, v.frameGapLimitMs(false));
 		final Trace t = Trace.steady(N).unfocused(120, 120).frameGap(120, 500, 400).frameGap(140, 500, 400);
@@ -370,23 +345,10 @@ public class LagDetectorTest
 	}
 
 	@Test
-	public void aPauseThatStartsAtASecondsFirstMsFiresThere()
-	{
-		final Run r = run(Trace.steady(N).gcPause(121, 0, 150, 400));
-		assertEquals(0, r.d.triggers(120));
-		assertEquals(Trigger.GC_PAUSE.bit(), r.d.triggers(121));
-		assertEquals(121, r.rec.closed.get(0).startSec);
-		// A pause that starts at the last ms of 120 touches both seconds.
-		final Run both = run(Trace.steady(N).gcPause(120, 999, 150, 400));
-		assertEquals(Trigger.GC_PAUSE.bit(), both.d.triggers(120));
-		assertEquals(Trigger.GC_PAUSE.bit(), both.d.triggers(121));
-	}
-
-	@Test
 	public void aMaskedSecondFiresOnlyDisconnectAndLongLoad()
 	{
-		// A load with a 900 ms frame and a 300 ms known pause in it fires nothing.
-		final Run load = run(Trace.steady(N).loading(120, 500).frameGap(120, 800, 900).gcPause(120, 0, 300, 400));
+		// A load with a 900 ms frame in it fires nothing.
+		final Run load = run(Trace.steady(N).loading(120, 500).frameGap(120, 800, 900));
 		assertEquals(0, load.d.triggers(120));
 		assertTrue(load.rec.opened.isEmpty());
 		// A lost connection inside a hop's login mask fires, and opens an event.
@@ -595,21 +557,19 @@ public class LagDetectorTest
 			.fps(121, 121, 30).fps(122, 122, 35).fps(124, 124, 45)
 			.frameGap(120, 400, 450)
 			.tickLate(122, 305, false)
-			.gcPause(125, 100, 150, 500)
+			.frameGap(125, 400, 300)
 			.rtt(120, 120, 60).rtt(121, 121, 80).rtt(122, 122, 45).rtt(123, 123, 85).rttStale(124, 124)
 			.rtt(125, 125, 70)
 			.sent(117, 117, 3000).sent(118, 118, 1000).sent(127, 127, 700).sent(128, 128, 5000)
-			.resent(119, 2).resent(126, 30).resent(128, 50)
-			.heap(123, 123, 742).heap(130, 130, 760)
-			.cpu(121, 121, 55, 70).cpu(123, 123, 88, 90).cpu(130, 130, 99, 100);
+			.resent(119, 2).resent(126, 30).resent(128, 50);
 		final Run r = run(t);
 		assertEquals(1, r.rec.closed.size());
 		final LagEvent e = r.rec.closed.get(0);
 		assertEquals(0, e.id);
 		assertEquals(120, e.startSec);
-		assertEquals("the pause at 125", 125, e.endSec);
+		assertEquals("the freeze at 125", 125, e.endSec);
 		assertEquals(r.s.wallMsOf(120), e.startWallMs);
-		assertEquals(Trigger.FRAME_GAP.bit() | Trigger.TICK_OFF.bit() | Trigger.GC_PAUSE.bit(), e.triggers);
+		assertEquals(Trigger.FRAME_GAP.bit() | Trigger.TICK_OFF.bit(), e.triggers);
 		assertEquals(Trigger.FRAME_GAP, e.first);
 		assertEquals("the first second's", 416, e.world);
 		assertEquals(12850, e.region);
@@ -625,11 +585,6 @@ public class LagDetectorTest
 		assertEquals("0 .. 119 fed 40", 40, e.rttBeforeMs);
 		assertEquals("118 .. 127: 1,000 + 8 x 900 + 700", 8900, e.sentUnits);
 		assertEquals("2 at 119 and 30 at 126", 32, e.resentUnits);
-		assertEquals(150, e.gcPauseMs);
-		assertEquals(742, e.heapUsedMb);
-		assertEquals(768, e.heapMaxMb);
-		assertEquals(88, e.sysCpuPct);
-		assertEquals(90, e.gameBusyPct);
 		assertFalse(e.open);
 		assertFalse(e.becameCondition);
 		assertNull(e.verdict);
@@ -648,10 +603,6 @@ public class LagDetectorTest
 		assertEquals(60, o.rttMaxMs);
 		assertEquals(1000 + 4 * 900, o.sentUnits);
 		assertEquals(2, o.resentUnits);
-		assertEquals(0, o.gcPauseMs);
-		assertEquals(400, o.heapUsedMb);
-		assertEquals(20, o.sysCpuPct);
-		assertEquals(40, o.gameBusyPct);
 	}
 
 	@Test
@@ -690,11 +641,12 @@ public class LagDetectorTest
 	@Test
 	public void theFirstTriggerIsTheFirstInTriggerOrder()
 	{
-		// A freeze and a pause in the opening second: FRAME_GAP comes before GC_PAUSE in Trigger's order.
-		final LagEvent both = run(Trace.steady(N).gcPause(120, 0, 150, 400).frameGap(120, 500, 300)).rec.closed.get(0);
-		assertEquals(Trigger.FRAME_GAP.bit() | Trigger.GC_PAUSE.bit(), both.triggers);
+		// A freeze and a late tick in the opening second: FRAME_GAP comes before TICK_OFF in Trigger's order.
+		final LagEvent both = run(Trace.steady(N).tickLate(120, 700, false).frameGap(120, 500, 300)).rec.closed
+			.get(0);
+		assertEquals(Trigger.FRAME_GAP.bit() | Trigger.TICK_OFF.bit(), both.triggers);
 		assertEquals(Trigger.FRAME_GAP, both.first);
-		assertEquals(Trigger.GC_PAUSE, run(Trace.steady(N).gcPause(120, 0, 150, 400)).rec.closed.get(0).first);
+		assertEquals(Trigger.TICK_OFF, run(Trace.steady(N).tickLate(120, 700, false)).rec.closed.get(0).first);
 		// A spike and a re-send: RTT_SPIKE comes first in the order but cannot open, so RESENT opened the event.
 		final LagEvent spike = run(Trace.steady(N).usual(40).rtt(120, 120, 300).resent(120, 144)).rec.closed.get(0);
 		assertEquals(Trigger.RTT_SPIKE.bit() | Trigger.RESENT.bit(), spike.triggers);
@@ -719,47 +671,6 @@ public class LagDetectorTest
 		assertEquals(40, rec.opened.get(0).rttBeforeMs);
 		// With no usual yet at the opening (20 samples), -1.
 		assertEquals(-1, run(Trace.steady(N).frameGap(20, 500, 300)).rec.closed.get(0).rttBeforeMs);
-	}
-
-	@Test
-	public void eventCarriesItsCpu()
-	{
-		final Run r = run(Trace.steady(N).frameGap(120, 500, 300).frameGap(121, 500, 300).frameGap(122, 500, 300)
-			.cpu(120, 120, 20, 40).cpu(121, 121, 96, 100).cpu(122, 122, 30, 50));
-		final LagEvent e = r.rec.closed.get(0);
-		assertEquals(122, e.endSec);
-		assertEquals(96, e.sysCpuPct);
-		assertEquals(100, e.gameBusyPct);
-		final Run none = run(Trace.steady(N).cpuUnknown().busyUnknown().frameGap(120, 500, 300));
-		assertEquals(-1, none.rec.closed.get(0).sysCpuPct);
-		assertEquals(-1, none.rec.closed.get(0).gameBusyPct);
-	}
-
-	@Test
-	public void eventPauseIsZeroWhenMeasuredAndNone()
-	{
-		// A 90 ms pause that ends before the span (at 119,090), and one that starts at the first ms after it
-		// (121,000), are not in it: the span is 120,000 .. 120,999, both ends included (3.3).
-		final Run r = run(Trace.steady(N).gcPause(119, 0, 90, 400).gcPause(121, 0, 90, 400)
-			.frameGap(120, 500, 300));
-		assertEquals(120, r.rec.closed.get(0).endSec);
-		assertEquals(0, r.rec.closed.get(0).gcPauseMs);
-	}
-
-	@Test
-	public void eventPauseIsUnknownOnTheFallback()
-	{
-		final Run r = run(Trace.steady(N).gcInferred(120, 300).frameGap(120, 500, 300),
-			settingsWith(768, MemorySource.RUNTIME));
-		assertEquals(-1, r.rec.closed.get(0).gcPauseMs);
-	}
-
-	@Test
-	public void anUnknownHeapLimitIsMinusOne()
-	{
-		final Run r = run(Trace.steady(N).frameGap(120, 500, 300), settingsWith(0, MemorySource.MANAGEMENT));
-		assertEquals(-1, r.rec.closed.get(0).heapMaxMb);
-		assertEquals("the used heap is still known", 400, r.rec.closed.get(0).heapUsedMb);
 	}
 
 	// ---------------------------------------------------------------- the open event
@@ -897,7 +808,7 @@ public class LagDetectorTest
 		// A session written by hand: a frame gap at 5, read; then seconds up to 4,005, which wrap the ring so that
 		// it begins at 406. The first second it still holds is a frame gap too, and so is 3,900.
 		final Session s = new Session(1_000_000_000L, 0, Os.WINDOWS, java.time.ZoneOffset.UTC);
-		final SettingsView v = settingsWith(768, MemorySource.MANAGEMENT);
+		final SettingsView v = Trace.steady(1).settings();
 		final LagDetector d = new LagDetector();
 		final Recorder rec = new Recorder();
 		for (long sec = 0; sec <= 5; sec++)
@@ -938,12 +849,12 @@ public class LagDetectorTest
 		{
 			fields += java.lang.reflect.Modifier.isStatic(f.getModifiers()) ? 0 : 1;
 		}
-		final LagEvent e = new LagEvent(1, 2, 3, 4, 5, Trigger.GC_PAUSE, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-			19, 20, 21, 22, 23, 24, true, false, null);
+		final LagEvent e = new LagEvent(1, 2, 3, 4, 5, Trigger.TICK_OFF, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+			18, 19, true, false, null);
 		final String text = describe(e, 0, true);
 		assertEquals(text, fields, text.split(" ").length);
 		assertEquals("the id left out", fields - 1, describe(e, 0, false).split(" ").length);
-		for (int v = 1; v <= 24; v++)
+		for (int v = 1; v <= 19; v++)
 		{
 			assertTrue("value " + v + " in " + text, (text + " ").contains("=" + v + " "));
 		}
@@ -975,13 +886,6 @@ public class LagDetectorTest
 		}
 	}
 
-	/** The default settings of a trace, with another heap limit and memory source. */
-	private static SettingsView settingsWith(int heapMaxMb, MemorySource source)
-	{
-		return new SettingsView(Renderer.CPU, false, false, 0, false, 0, false, "", 0, 0, "", 0, 60, heapMaxMb, source,
-			Os.WINDOWS, "");
-	}
-
 	/** {@code totalMs} of LOADING from second {@code from} on, 1,000 ms a second: one run. */
 	private static Trace loadRun(Trace t, int from, int totalMs)
 	{
@@ -1006,8 +910,6 @@ public class LagDetectorTest
 		f.frames = 50;
 		f.worstFrameMs = worstFrameMs;
 		f.worstFrameEndMs = 500;
-		f.busyPm = 400;
-		f.worstBusyPm = 300;
 		f.state = State.LOGGED_IN;
 		f.flags = Flags.FOCUSED;
 		f.world = 416;
@@ -1016,9 +918,6 @@ public class LagDetectorTest
 		h.rttMs = 40;
 		h.rttAgeS = 0;
 		h.sentUnits = 900;
-		h.heapUsedMb = 400;
-		h.procCpuPct = 40;
-		h.sysCpuPct = 20;
 		s.seconds.putHost(sec, h);
 	}
 
@@ -1039,9 +938,8 @@ public class LagDetectorTest
 			+ " fps=" + e.fps + " worstFrame=" + e.worstFrameMs + " meanTick=" + e.meanTickGapMs
 			+ " worstTick=" + e.worstTickGapMs + " worstCorrected=" + e.worstCorrectedTickMs + " rtt=" + e.rttMs
 			+ " rttMax=" + e.rttMaxMs + " rttBefore=" + e.rttBeforeMs + " sent=" + e.sentUnits
-			+ " resent=" + e.resentUnits + " gcPause=" + e.gcPauseMs + " heap=" + e.heapUsedMb
-			+ " heapMax=" + e.heapMaxMb + " sysCpu=" + e.sysCpuPct + " gameBusy=" + e.gameBusyPct
-			+ " open=" + e.open + " becameCondition=" + e.becameCondition + " verdict=" + e.verdict;
+			+ " resent=" + e.resentUnits + " open=" + e.open + " becameCondition=" + e.becameCondition
+			+ " verdict=" + e.verdict;
 	}
 
 	/** A session, its detector, and what the detector told. */

@@ -54,7 +54,7 @@ public class SeamsTest
 		assertEquals(BadgeView.class, m.getReturnType());
 		assertEquals(0, m.getParameterCount());
 		assertMustBeWritten(m);
-		assertEquals(names("source", "settings", "hostProbe", "samplerThreadId", "control", "badge"),
+		assertEquals(names("source", "settings", "samplerThreadId", "control", "badge"),
 			methods(DevHandle.class));
 	}
 

@@ -3,10 +3,12 @@ package com.whylag.ui;
 import com.whylag.GraphRange;
 import com.whylag.PanelActions;
 import com.whylag.PanelControl;
+import com.whylag.Report;
 import com.whylag.core.Cells;
 import com.whylag.core.Fmt;
 import com.whylag.core.LagEvent;
 import com.whylag.core.PanelSnapshot;
+import com.whylag.core.ReportText;
 import com.whylag.core.Verdict;
 import java.awt.Component;
 import java.awt.Container;
@@ -16,20 +18,29 @@ import java.awt.Graphics2D;
 import java.awt.HeadlessException;
 import java.awt.Insets;
 import java.awt.LayoutManager;
+import java.awt.Rectangle;
 import java.awt.Toolkit;
+import java.awt.Window;
 import java.awt.datatransfer.StringSelection;
 import java.util.Collections;
+import java.util.function.BiFunction;
 import java.util.function.Predicate;
 import javax.swing.JComponent;
+import javax.swing.JPopupMenu;
+import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import net.runelite.client.ui.PluginPanel;
 
 /**
- * The side panel of picture 18, "Big Answer" (contract 5): top down, the header, the answer card, the five cells,
- * the range row, the "Graphs" fold row with the five lanes behind it, the "Lags (n)" fold row with the event list
- * behind it, the session's total and its counts, the "Copy report" button, and in developer mode a footer. Content width
- * 213 px at the panel's own 225, and the width of the sidebar less the border when it is wider (230 in the client),
- * on the {@link Ui#GROUND} ground. Every block is one custom-painted component, so a one-second update is
- * a few field writes and one repaint of each block.
+ * The side panel of picture 18, "Big Answer" (contract 5): top down, the header with the settings gear at its right
+ * end, the answer card, the three cells, the range row, the "Graphs" fold row with the three lanes behind it, the
+ * "Lags (n)" fold row with the event list behind it, the session's total and its counts, and in developer mode a
+ * footer under that. The gear opens a menu of the badge's four settings and "Troubleshoot...", which runs the ten
+ * checks and shows the report in a window (1.0.1, lot C); the panel has no button, no verdict line and no version
+ * row - the version is the menu's last row. Content width 213 px at the panel's own 225, and the
+ * width of the sidebar less the border when it is wider (230 in the client), on the {@link Ui#GROUND} ground. Every
+ * block is one custom-painted component, so a one-second update is a few field writes and one repaint of each
+ * block.
  *
  * <p><b>Showing.</b> {@link #show} runs on the Swing thread. While the panel is hidden it keeps the snapshot and
  * paints nothing (T9); {@link #onActivate} asks the plugin for one snapshot at once. A show changes the layout only
@@ -51,19 +62,48 @@ import net.runelite.client.ui.PluginPanel;
  * <p>Choice: an id not among the snapshot's range events clears the selection, also when its event ages out.
  * <p>Choice: a selected event with no verdict (only a test builds one) leaves the card on the snapshot's verdict.
  * <p>Choice: a press on the chip of the range already shown does nothing.
- * <p>Choice: "Copy report" copies nothing before the first snapshot, or when the report is "", and answers "".
- * <p>Choice: "Copied" shows only when the clipboard took the text.
+ * <p>Choice: the gear does nothing before the first snapshot: the menu is built from the last snapshot's settings, and
+ * the first one comes within a second of the panel showing ({@link #onActivate} asks for it at once).
+ * <p>Choice: the menu is built FRESH at every open, so it ticks what the newest snapshot holds; a press on the gear
+ * while the menu stands takes it down and opens nothing, and a press within {@code HeaderRow.MENU_REOPEN_MS} of its
+ * closing opens nothing either (the header's rule). The menu opens under the gear with its right edge at the gear's.
+ * <p>Choice: "Troubleshoot..." does nothing before the first snapshot, and answers "" then; it opens the window at
+ * once on "Testing..." - or re-uses the one that stands, for a new test - and hands the last snapshot to the actions.
+ * <p>Choice: a press also starts a one-shot Swing timer of {@value #TEST_TIMEOUT_MS} ms, stopped when the report
+ * comes back and when the panel is hidden. When it fires first the sampler thread is hung, and the window is filled
+ * with a FALLBACK report made here: {@link ReportText#of(PanelSnapshot, String)} of the kept last snapshot with a
+ * Verdict and a Checks block that say the sampler did not answer, and {@value #NO_ANSWER} as its verdict. The
+ * press's generation is then spent, so a report that comes later is ignored.
+ * <p>Choice: the fallback is safe on the Swing thread because the snapshot is immutable and every string in it (the
+ * minute log, the diagnostics text) was made on the sampler thread before it was handed over: the fallback only
+ * joins them, and reads no ring, no client state and no lock the hung thread could hold.
+ * <p>Choice: the report comes back on the Swing thread through {@code PanelActions.testAndReport}'s callback and
+ * fills the window it was asked for, when that window still stands; nothing is copied until the player presses
+ * "Copy report" in it.
+ * <p>Choice: hiding the panel closes the window and stops the timeout: nobody is waiting for the report.
+ * <p>Choice: {@link #troubleshoot()} answers the text only when the callback ran before it returned (a stub's); the
+ * plugin's answer comes later, so it answers "".
  * <p>Choice: {@link #component()} is the panel itself.
  * <p>Choice: the developer-mode footer is a block of 213 x 14 (as wide as the panel gives it), RuneScape Small at
  * baseline 11, cut with "...".
+ * <p>Choice: the session's counts are the last block of the panel, and the developer-mode footer sits under them
+ * with its 6 px gap.
  */
 public final class WhyLagPanel extends PluginPanel implements PanelControl
 {
 	/** The client property that holds a block's gap above it. */
 	private static final String GAP = "whylag.gap";
+	/** How long a press waits for the sampler's report before the panel copies its own fallback. */
+	static final int TEST_TIMEOUT_MS = 3000;
+	/** The fallback report's verdict, shown in the window when the fallback was made. */
+	static final String NO_ANSWER = "Sampler did not answer in 3 s";
+	/** The Verdict and Checks lines the fallback report carries in place of the checks, blank lines included. */
+	private static final String NO_ANSWER_CHECKS = "Verdict: The plugin's sampler did not answer in 3 s.\n\n"
+		+ "Checks: not run (the sampler thread did not answer; the notes and the last 60 minutes below are from the"
+		+ " last snapshot)\n\n";
 
 	private final PanelActions actions;
-	private final HeaderRow header = new HeaderRow();
+	private final HeaderRow header;
 	private final AnswerCard card = new AnswerCard();
 	private final CellStrip cells = new CellStrip();
 	private final RangeRow rangeRow;
@@ -73,11 +113,16 @@ public final class WhyLagPanel extends PluginPanel implements PanelControl
 	private final EventList list;
 	private final SessionHeader sessionHeader = new SessionHeader();
 	private final SessionCounts counts = new SessionCounts();
-	private final ButtonRow buttons;
+	private final Timer testTimeout;
 	private final Footer footer;
 
-	/** Where "Copy report" puts its text; true when the clipboard took it. A seam: tests hand in their own. */
+	/** Where the report is copied to; true when the clipboard took it. A seam: tests hand in their own. */
 	Predicate<String> clipboard = WhyLagPanel::toSystemClipboard;
+	/**
+	 * How the Troubleshoot window is opened, handed the panel's window and the clipboard: the real one, which needs a
+	 * display. A seam: tests hand in a window-less one.
+	 */
+	BiFunction<Window, Predicate<String>, TroubleshootDialog> dialogOpener = TroubleshootDialog::open;
 
 	private volatile int range;
 	private volatile boolean graphsOpen;
@@ -89,6 +134,12 @@ public final class WhyLagPanel extends PluginPanel implements PanelControl
 	private PanelSnapshot last;
 	/** The selected event's id, -1 = none; Swing thread only. */
 	private long selectedId = -1;
+	/** Counts presses and spent fallbacks: a report whose press is not the newest generation is stale; Swing thread only. */
+	private int pressGeneration;
+	/** The Troubleshoot window that stands, null when none does; Swing thread only. */
+	private TroubleshootDialog dialog;
+	/** The gear menu built at the last open, null before the first; Swing thread only. */
+	private JPopupMenu menu;
 
 	/**
 	 * The panel. {@code initial} is the range its chips show first (null: 10 min); {@code developerMode} adds the
@@ -103,7 +154,9 @@ public final class WhyLagPanel extends PluginPanel implements PanelControl
 		graphsRow = new FoldRow("Graphs", false, () -> fold(!graphsOpen, lagsOpen));
 		lagsRow = new FoldRow("Lags", true, () -> fold(graphsOpen, !lagsOpen));
 		list = new EventList(this::rowPressed);
-		buttons = new ButtonRow(this::copyReport);
+		header = new HeaderRow(this::openMenu);
+		testTimeout = new Timer(TEST_TIMEOUT_MS, e -> samplerDidNotAnswer());
+		testTimeout.setRepeats(false);
 		footer = developerMode ? new Footer() : null;
 
 		rangeRow.set(range);
@@ -120,7 +173,6 @@ public final class WhyLagPanel extends PluginPanel implements PanelControl
 		gap(list, 3);
 		gap(sessionHeader, 12);
 		gap(counts, 4);
-		gap(buttons, 10);
 		add(header);
 		add(card);
 		add(cells);
@@ -129,7 +181,6 @@ public final class WhyLagPanel extends PluginPanel implements PanelControl
 		add(lagsRow);
 		add(sessionHeader);
 		add(counts);
-		add(buttons);
 		if (footer != null)
 		{
 			gap(footer, 6);
@@ -173,7 +224,6 @@ public final class WhyLagPanel extends PluginPanel implements PanelControl
 		layout |= list.set(s.rangeEvents, selectedId, s.rangeMinutes, s.zone) && lagsOpen;
 		sessionHeader.set(s.sessionTotal);
 		layout |= counts.set(s.sessionCounts);
-		buttons.setCopyEnabled(true);
 		if (footer != null)
 		{
 			footer.set(s.footer);
@@ -234,7 +284,8 @@ public final class WhyLagPanel extends PluginPanel implements PanelControl
 		active = false;
 		deactivations++;
 		selectedId = -1;
-		buttons.stopTimer();
+		testTimeout.stop();
+		closeDialog();
 	}
 
 	// ------------------------------------------------------------------ what a press does
@@ -321,21 +372,120 @@ public final class WhyLagPanel extends PluginPanel implements PanelControl
 	@Override
 	public String copyReport()
 	{
+		return troubleshoot();
+	}
+
+	/**
+	 * "Troubleshoot..." (Swing thread): the window opens on "Testing..." - or the one that stands is re-used for a new
+	 * test - the timeout starts and the last snapshot goes to the actions. Does nothing, and answers "", before the
+	 * first snapshot. Answers the report's text when the actions brought it back before this returned, else "".
+	 */
+	String troubleshoot()
+	{
 		final PanelSnapshot s = last;
 		if (s == null)
 		{
 			return "";
 		}
-		final String text = actions.report(s);
-		if (text == null || text.isEmpty())
+		final TroubleshootDialog standing = dialog;
+		final TroubleshootDialog shown;
+		if (standing != null && standing.isOpen())
 		{
-			return "";
+			standing.testing();
+			standing.toFront();
+			shown = standing;
 		}
-		if (clipboard.test(text))
+		else
 		{
-			buttons.copiedNow();
+			shown = dialogOpener.apply(SwingUtilities.getWindowAncestor(this), text -> clipboard.test(text));
+			dialog = shown;
 		}
-		return text;
+		final String[] atOnce = {""};
+		final boolean[] pressing = {true};
+		final int mine = ++pressGeneration;
+		testTimeout.restart();
+		actions.testAndReport(s, report ->
+		{
+			if (mine != pressGeneration)
+			{
+				return;
+			}
+			testTimeout.stop();
+			final String text = answer(shown, report);
+			if (pressing[0])
+			{
+				atOnce[0] = text;
+			}
+		});
+		pressing[0] = false;
+		return atOnce[0];
+	}
+
+	/**
+	 * The sampler did not answer a press in {@link #TEST_TIMEOUT_MS} ms (Swing thread): the window is filled with a
+	 * report made here from the last snapshot, with the Verdict and Checks lines of a test that was not run. The
+	 * press's generation is spent first, so the real answer, if it ever comes, is ignored.
+	 *
+	 * <p>Choice: the snapshot is immutable and its strings were made on the sampler thread, so joining them here is
+	 * safe on the Swing thread and cannot wait on the thread that is hung.
+	 */
+	private void samplerDidNotAnswer()
+	{
+		pressGeneration++;
+		final PanelSnapshot s = last;
+		final TroubleshootDialog d = dialog;
+		if (d != null && d.isOpen())
+		{
+			d.show(new Report(s == null ? "" : ReportText.of(s, NO_ANSWER_CHECKS), NO_ANSWER));
+		}
+	}
+
+	/** The report came back (Swing thread): it fills the window if that still stands. Answers the text, "" if none. */
+	private String answer(TroubleshootDialog shown, Report report)
+	{
+		if (shown.isOpen())
+		{
+			shown.show(report);
+		}
+		return report == null ? "" : report.text;
+	}
+
+	/** Closes the Troubleshoot window, if one stands (Swing thread). */
+	private void closeDialog()
+	{
+		final TroubleshootDialog d = dialog;
+		dialog = null;
+		if (d != null)
+		{
+			d.dispose();
+		}
+	}
+
+	/**
+	 * The gear was pressed (Swing thread): takes down a menu that still stands, else builds the menu fresh from the
+	 * last snapshot and opens it under the gear, its right edge at the gear's. Does nothing before the first snapshot
+	 * and, as a menu needs a screen to stand on, nothing more while the panel is not showing.
+	 */
+	private void openMenu()
+	{
+		final JPopupMenu standing = menu;
+		if (standing != null && standing.isVisible())
+		{
+			standing.setVisible(false);
+			return;
+		}
+		final PanelSnapshot s = last;
+		if (s == null)
+		{
+			return;
+		}
+		final JPopupMenu fresh = GearMenu.build(s.badgeSettings, actions, () -> troubleshoot(), header::menuClosed);
+		menu = fresh;
+		if (header.isShowing())
+		{
+			final Rectangle gear = header.gearBounds();
+			fresh.show(header, gear.x + gear.width - fresh.getPreferredSize().width, header.getHeight());
+		}
 	}
 
 	@Override
@@ -462,9 +612,22 @@ public final class WhyLagPanel extends PluginPanel implements PanelControl
 		return counts;
 	}
 
-	ButtonRow buttons()
+	/** The press's timeout: one-shot, running from a press until its report, the fallback or a hide. */
+	Timer testTimeout()
 	{
-		return buttons;
+		return testTimeout;
+	}
+
+	/** The Troubleshoot window that stands; null when none does. */
+	TroubleshootDialog dialog()
+	{
+		return dialog;
+	}
+
+	/** The gear menu as the last press on the gear built it; null before the first press that could. */
+	JPopupMenu menu()
+	{
+		return menu;
 	}
 
 	/** The developer-mode footer; null outside developer mode. */

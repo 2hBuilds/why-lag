@@ -17,10 +17,9 @@ import static org.junit.Assert.fail;
 /**
  * Contrast (contract 5): every TEXT colour of an enabled control is 4.5:1 or better on its ground - measured on
  * every string every block draws, in every fixture, both fold states, with the developer-mode footer, the colour
- * as it lands (its alpha folded in) against the ground the recorder found under it. The disabled "Copy report"
- * before the first snapshot is skipped BY NAME, as WCAG 1.4.3 exempts inactive components. A lane value's
- * 1 px black shadow is part of that value, not a text of its own. Stock red (230, 30, 30) is never used by
- * drawString.
+ * as it lands (its alpha folded in) against the ground the recorder found under it. There is no button and no
+ * dimmed text left since 1.0.1, lot C. A lane value's 1 px black shadow is part of that value, not a text of its
+ * own. Stock red (230, 30, 30) is never used by drawString.
  */
 public class ContrastTest
 {
@@ -92,31 +91,6 @@ public class ContrastTest
 		assertEquals("LABEL on the ground: 5.98:1", 5.98, contrast(Ui.LABEL, Ui.GROUND), 0.01);
 	}
 
-	/**
-	 * The disabled button is skipped by name, and the skip matters: at alpha 120 it is under 4.5:1. Once a snapshot
-	 * came, "Copy report" is enabled and is checked like any text. It is the row's only button since the world test
-	 * was parked on 2026-09-30.
-	 */
-	@Test
-	public void theDisabledButtonIsSkippedByName()
-	{
-		final ButtonRow before = PanelFixtures.onEdt(() -> new ButtonRow(() -> { }));
-		final List<Drawn> drawn = record(before);
-		assertEquals(1, drawn.size());
-		for (Drawn d : drawn)
-		{
-			assertEquals(d.toString(), 120, d.colour.getAlpha());
-			assertTrue("a dimmed text is under 4.5:1: " + d, contrast(d.seen(), d.ground) < 4.5);
-		}
-		assertTrue("it is skipped", texts(drawn).isEmpty());
-
-		final WhyLagPanel shown = PanelFixtures.panel(PanelFixtures.quiet(), false);
-		final List<Drawn> after = texts(record(shown.buttons()));
-		assertEquals("'Copy report' counts once it is enabled", 1, after.size());
-		assertEquals("Copy report", after.get(0).text);
-		assertTrue(contrast(after.get(0).seen(), after.get(0).ground) >= 4.5);
-	}
-
 	@Test
 	public void badIsNeverUsedByDrawString()
 	{
@@ -137,10 +111,7 @@ public class ContrastTest
 		assertTrue("red text is drawn, in 255,90,90", red > 10);
 	}
 
-	/**
-	 * The texts to measure: every string but a lane value's black shadow (drawn one pixel right and down of the same
-	 * string) and the disabled button, skipped by name: "Copy report" while it is dimmed.
-	 */
+	/** The texts to measure: every string but a lane value's black shadow (drawn one pixel right and down of the same string). */
 	private static List<Drawn> texts(List<Drawn> drawn)
 	{
 		final List<Drawn> out = new ArrayList<>();
@@ -150,8 +121,7 @@ public class ContrastTest
 			final Drawn next = i + 1 < drawn.size() ? drawn.get(i + 1) : null;
 			final boolean shadow = (d.colour.getRGB() & 0xFFFFFF) == 0 && next != null && next.text.equals(d.text)
 				&& next.x == d.x - 1 && next.y == d.y - 1;
-			final boolean disabled = d.text.equals(ButtonRow.COPY) && d.colour.getAlpha() < 255;
-			if (!shadow && !disabled)
+			if (!shadow)
 			{
 				out.add(d);
 			}

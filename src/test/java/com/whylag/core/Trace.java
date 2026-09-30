@@ -4,7 +4,6 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -19,25 +18,16 @@ import java.util.List;
  * <caption>The steady second</caption>
  * <tr><th>Column</th><th>Steady value</th></tr>
  * <tr><td>frames / worstFrameMs / worstFrameEndMs / slowFrames</td><td>50 / 22 / 500 / 0</td></tr>
- * <tr><td>busyPm (the second)</td><td>400, which is "Game 40 %"</td></tr>
- * <tr><td>worstBusyPm (its worst frame)</td><td>300</td></tr>
  * <tr><td>loadingMs / state / flags / world</td><td>0 / LOGGED_IN / FOCUSED / 416</td></tr>
  * <tr><td>players / npcs / region</td><td>0 / 0 / 0 (a test that needs them sets them)</td></tr>
  * <tr><td>rttMs / rttAgeS / conn</td><td>40 / 0 (fresh) / NONE</td></tr>
  * <tr><td>sentUnits / resentUnits</td><td>900 / 0</td></tr>
- * <tr><td>heapUsedMb</td><td>400 (of the settings' 768)</td></tr>
- * <tr><td>procCpuPct / sysCpuPct</td><td>40 / 20, which is "PC 20 %"</td></tr>
  * <tr><td>each tick</td><td>one every 600 ms from session ms 0; gap 600, frameMs 22, cycle jump 30, the RTT and
  * the flags of its second. The trace's FIRST tick has no tick before it: gap 600 ({@link Thresholds#TICK_MS}) and
  * cycle jump -1, as the tick sampler writes the session's first tick (contract section 7, L2)</td></tr>
  * </table>
  * Beside the seconds, a steady trace holds:
  * <ul>
- * <li>ONE collection, an INFERRED one (no length), at session ms -1000 with heap after 300. So
- * {@code heapAfterAt} reads 300 from second 0 on, the memory lane is 300 in every column, no span inside the trace
- * touches a collection, and {@code inferredIn} is false for every span inside the trace.</li>
- * <li>NO known pause: {@code GcRing.longestPauseMs} answers 0 for every span. With the default settings
- * (MANAGEMENT) that reads as "measured, none": the memory tile's small line is "pause 0 ms".</li>
  * <li>The login: {@code loggedInSinceSec} is {@code -WARMUP_S} (0 since the first live look, 2026-09-29; it was
  * -60). The trace is WARM from second 0 and nothing
  * is masked. {@link #loginAt} sets it to its second.</li>
@@ -52,8 +42,7 @@ import java.util.List;
  * never lowers it; at an interval of {@link Thresholds#SLOW_FRAME_MS} or more every frame of the second is slow
  * ({@code slowFrames} = fps, at most 127); the ticks that arrive in those seconds carry at least that interval as
  * {@code frameMs}. {@code fps(.., 0)} is a second with no frame, as the sampler fills one: {@code frames}, the
- * worst frame and its end 0, {@code slowFrames} 0, BOTH busy columns -1 (so the Game line has no data there), and
- * the NO_FRAMES flag.</li>
+ * worst frame and its end 0, {@code slowFrames} 0 and the NO_FRAMES flag.</li>
  * <li>{@link #frameGap} sets the worst frame and its end when it is at least as long as the second's worst so far
  * (a tie moves the end; a shorter frame leaves both alone) and, when {@code ms} is
  * {@link Thresholds#SLOW_FRAME_MS} or more, adds one slow frame; every second the frame covers WHOLE becomes a
@@ -64,17 +53,7 @@ import java.util.List;
  * (contract 6.1). A trace does not say where in a second its loading ms lie, so touching such a second counts as
  * overlapping its loading time. The steady frames of a second end inside it: only frameGap's frames carry a load
  * into a later second.</li>
- * <li>{@link #busy}: the worst frame's busy share. {@link #cpu}: the whole PC's CPU % ({@code sysCpuPct}) and the
- * game thread's busy % as the SECOND's share, {@code busyPm = gameBusyPct x 10}; -1 is unknown, for either.
- * {@link #procCpu}: the process's share of one core.</li>
- * <li>{@link #busyUnknown} (both busy columns) and {@link #cpuUnknown} ({@code sysCpuPct} and {@code procCpuPct})
- * write -1 in every second, and in the seconds {@link #shift} adds later too. A Runtime-only PC is
- * {@code cpuUnknown().busyUnknown()} with RUNTIME settings. {@link #cpu} after {@link #busyUnknown} or
- * {@code fps(.., 0)} writes {@code busyPm} again in its span: the last call wins.</li>
  * <li>{@link #players}, {@link #npcs}, {@link #region} (0 .. 65535): that column.</li>
- * <li>{@link #gcPause}: one known pause that STARTS {@code offsetMs} into its second. {@link #gcInferred}: one
- * collection with no length, at the START of its second (session ms {@code atSec x 1000}).
- * {@link #noBaselineCollection}: takes the steady trace's ONE collection away.</li>
  * <li>{@link #tickLate}: the FIRST tick that arrives in the second comes {@code lateMs} later; with catch-up the
  * ones after keep their times (so the next gap is 600 - late, and a late tick that would reach the next one is
  * refused), without it that tick and every later tick move by the same amount. {@link #ticksEvery}: the ticks
@@ -92,7 +71,7 @@ import java.util.List;
  * exactly the seconds whose RTT is fresh, in every trace (contract 3.3). {@link #usual}: this world's usual RTT;
  * {@link #build()} adds {@link Thresholds#USUAL_MIN_SAMPLES} samples of it to {@code Session.rttUsual} and touches
  * no ring (the last call wins).</li>
- * <li>{@link #sent}, {@link #resent} ({@code resent} does not add to {@code sent}), {@link #heap}: that column.</li>
+ * <li>{@link #sent}, {@link #resent} ({@code resent} does not add to {@code sent}): that column.</li>
  * <li>{@link #loading}: {@code loadingMs} and the LOADING flag, in that second only (a {@link #frameGap} frame that
  * touches it also flags the second that frame ends in, above).</li>
  * <li>{@link #hop}: the HOP flag and state HOPPING in its second, the new world from it on, and - as the tick
@@ -109,8 +88,8 @@ import java.util.List;
  * masked; {@code loggedInSinceSec} is its second.</li>
  * <li>{@link #unfocused}: the FOCUSED flag cleared. {@link #os}: the session's OS (and the default settings').
  * {@link #settings(SettingsView)}: what {@link #settings()} answers; it writes no ring.</li>
- * <li>{@link #shift}: k steady seconds come first, and every second, tick, frame, collection and mask moves later
- * by k seconds. The baseline collection moves too, to session ms {@code k x 1000 - 1000}. A login set by
+ * <li>{@link #shift}: k steady seconds come first, and every second, tick, frame and mask moves later
+ * by k seconds. A login set by
  * {@link #loginAt} moves, and then the k new seconds are login-screen seconds as {@link #loginAt} writes them (no
  * tick, nothing sent, ping NOT_LOGGED_IN), so every second before the login is still at the login screen; the
  * steady login stays at {@code -WARMUP_S}. Without {@link #loginAt} the new seconds are ordinary steady seconds,
@@ -118,14 +97,8 @@ import java.util.List;
  * make a usual exist sooner (contract section 7, L3, bounds its property test for that).</li>
  * </ul>
  *
- * <p><b>"Before the first collection"</b> is built in one of two ways. {@link #noBaselineCollection()}: the ring
- * is empty until the test adds a collection, so {@code heapAfterAt} is -1 and the memory lane is
- * {@link Strip#NONE} up to that collection. Or {@link #shift}: the columns that end before session ms
- * {@code k x 1000 - 1000} have no collection. A test may also build a {@link Session} by hand.
- *
- * <p><b>Default settings</b> ({@link #settings()}): renderer CPU (cap 50, CLIENT_50), heap limit 768, source
- * MANAGEMENT, refresh 60, FPS Control inactive, every renderer key unread (0 or ""), client version "". The steady
- * 900 bytes a second is over {@link Thresholds#CLICK_SENT_BYTES} on purpose: the click filter is a JUMP over the
+ * <p><b>Default settings</b> ({@link #settings()}): renderer CPU (cap 50, CLIENT_50), refresh 60, FPS Control
+ * inactive, every renderer key unread (0 or ""), client version "". The steady 900 bytes a second is over {@link Thresholds#CLICK_SENT_BYTES} on purpose: the click filter is a JUMP over the
  * quiet median, so a steady sender can still spike.
  *
  * <p>Every tick carries the flags and the RTT of the second it arrives in. {@link #build()} can be called any
@@ -146,29 +119,20 @@ public final class Trace
 	private static final int LAST_MS = 999;
 	private static final int BYTE_MAX = 127;
 	private static final int REGION_MAX = 65_535;
-	private static final int PER_MILLE_PER_PERCENT = 10;
 
 	private static final int FPS = 50;
 	private static final int WORST_MS = 22;
 	private static final int WORST_END_MS = 500;
-	private static final int BUSY_PM = 400;
-	private static final int WORST_BUSY_PM = 300;
 	private static final int WORLD_ID = 416;
 	private static final int RTT_MS = 40;
 	private static final int SENT_UNITS = 900;
-	private static final int HEAP_MB = 400;
-	private static final int HEAP_MAX_MB = 768;
-	private static final int HEAP_AFTER_MB = 300;
-	private static final int PROC_CPU_PCT = 40;
-	private static final int SYS_CPU_PCT = 20;
 	private static final int REFRESH_HZ = 60;
-	private static final long BASELINE_GC_MS = -1000;
 
 	// Per-second columns, in the ring's order; TICK_FRAME is the frame a tick in that second carries.
-	private static final int FRAMES = 0, WORST = 1, WORST_END = 2, SLOW = 3, BUSY = 4, WORST_BUSY = 5,
-		LOADING = 6, STATE = 7, FLAGS = 8, WORLD = 9, PLAYERS = 10, NPCS = 11, REGION = 12, RTT = 13, RTT_AGE = 14,
-		SENT = 15, RESENT = 16, HEAP = 17, PROC_CPU = 18, SYS_CPU = 19, TICK_FRAME = 20;
-	private static final int COLUMNS = 21;
+	private static final int FRAMES = 0, WORST = 1, WORST_END = 2, SLOW = 3, LOADING = 4, STATE = 5, FLAGS = 6,
+		WORLD = 7, PLAYERS = 8, NPCS = 9, REGION = 10, RTT = 11, RTT_AGE = 12, SENT = 13, RESENT = 14,
+		TICK_FRAME = 15;
+	private static final int COLUMNS = 16;
 	private static final int[] STEADY = new int[COLUMNS];
 
 	static
@@ -177,8 +141,6 @@ public final class Trace
 		STEADY[WORST] = WORST_MS;
 		STEADY[WORST_END] = WORST_END_MS;
 		STEADY[SLOW] = 0;
-		STEADY[BUSY] = BUSY_PM;
-		STEADY[WORST_BUSY] = WORST_BUSY_PM;
 		STEADY[LOADING] = 0;
 		STEADY[STATE] = State.LOGGED_IN;
 		STEADY[FLAGS] = Flags.FOCUSED;
@@ -190,9 +152,6 @@ public final class Trace
 		STEADY[RTT_AGE] = 0;
 		STEADY[SENT] = SENT_UNITS;
 		STEADY[RESENT] = 0;
-		STEADY[HEAP] = HEAP_MB;
-		STEADY[PROC_CPU] = PROC_CPU_PCT;
-		STEADY[SYS_CPU] = SYS_CPU_PCT;
 		STEADY[TICK_FRAME] = WORST_MS;
 	}
 
@@ -203,14 +162,8 @@ public final class Trace
 	private final List<Integer> ticks = new ArrayList<>();
 	/** Long frames: {start ms, end ms, length}. */
 	private final List<long[]> frameGaps = new ArrayList<>();
-	/** Collections: {start ms, duration (-1 inferred), heap after}. */
-	private final List<long[]> gcs = new ArrayList<>();
 	/** Session ms from which the next LOGIN_MASK_TICKS ticks are masked. */
 	private final List<Long> maskStarts = new ArrayList<>();
-	private long baselineGcMs = BASELINE_GC_MS;
-	private boolean baselineCollection = true;
-	private boolean busyUnknown;
-	private boolean cpuUnknown;
 	/** The session second of the login: the steady -WARMUP_S until {@link #loginAt} sets it. */
 	private long loggedInSince = -Thresholds.WARMUP_S;
 	private boolean loginSet;
@@ -314,63 +267,6 @@ public final class Trace
 		return this;
 	}
 
-	/** The busy share of the worst frame of {@code atSec}, per mille. */
-	public Trace busy(int atSec, int perMille)
-	{
-		checkSecond(atSec);
-		col[WORST_BUSY][atSec] = perMille;
-		return this;
-	}
-
-	/** The CPU clock answers nothing: both busy columns are -1 in every second, and in those {@link #shift} adds. */
-	public Trace busyUnknown()
-	{
-		busyUnknown = true;
-		Arrays.fill(col[BUSY], -1);
-		Arrays.fill(col[WORST_BUSY], -1);
-		return this;
-	}
-
-	/**
-	 * The whole PC's CPU % and the game thread's busy %, in every second of {@code fromSec .. toSec}: it writes
-	 * {@code sysCpuPct = sysPct} and {@code busyPm = gameBusyPct x 10} (the SECOND's share; the worst frame's is
-	 * {@link #busy}). -1 is unknown, for either; it writes {@code busyPm} again after {@link #busyUnknown} or
-	 * {@code fps(.., 0)}: the last call wins.
-	 */
-	public Trace cpu(int fromSec, int toSec, int sysPct, int gameBusyPct)
-	{
-		checkSpan(fromSec, toSec);
-		checkShare("the PC's CPU", sysPct);
-		checkShare("the game thread's busy share", gameBusyPct);
-		for (int s = fromSec; s <= toSec; s++)
-		{
-			col[SYS_CPU][s] = sysPct;
-			col[BUSY][s] = gameBusyPct < 0 ? -1 : gameBusyPct * PER_MILLE_PER_PERCENT;
-		}
-		return this;
-	}
-
-	/** The process's share of ONE core, in every second of {@code fromSec .. toSec}; -1 is unknown. */
-	public Trace procCpu(int fromSec, int toSec, int pct)
-	{
-		checkSpan(fromSec, toSec);
-		checkShare("the process's CPU", pct);
-		for (int s = fromSec; s <= toSec; s++)
-		{
-			col[PROC_CPU][s] = pct;
-		}
-		return this;
-	}
-
-	/** No CPU figure: {@code sysCpuPct} and {@code procCpuPct} are -1 in every second, and in those {@link #shift} adds. */
-	public Trace cpuUnknown()
-	{
-		cpuUnknown = true;
-		Arrays.fill(col[SYS_CPU], -1);
-		Arrays.fill(col[PROC_CPU], -1);
-		return this;
-	}
-
 	/** {@code n} players in the scene in {@code fromSec .. toSec}. */
 	public Trace players(int fromSec, int toSec, int n)
 	{
@@ -407,37 +303,6 @@ public final class Trace
 		{
 			col[REGION][s] = id;
 		}
-		return this;
-	}
-
-	/** A known pause of {@code ms} that STARTS {@code offsetMs} into {@code atSec}. */
-	public Trace gcPause(int atSec, int offsetMs, int ms, int heapAfterMb)
-	{
-		checkSecond(atSec);
-		if (offsetMs < 0 || offsetMs > LAST_MS)
-		{
-			throw new IllegalArgumentException("the offset is 0 .. 999, got " + offsetMs);
-		}
-		if (ms < 0)
-		{
-			throw new IllegalArgumentException("a known pause lasts 0 ms or more, got " + ms);
-		}
-		gcs.add(new long[] {(long) atSec * MS + offsetMs, ms, heapAfterMb});
-		return this;
-	}
-
-	/** A collection with no length at the start of {@code atSec}, as the fallback source infers one. */
-	public Trace gcInferred(int atSec, int heapAfterMb)
-	{
-		checkSecond(atSec);
-		gcs.add(new long[] {(long) atSec * MS, -1, heapAfterMb});
-		return this;
-	}
-
-	/** Takes the steady trace's ONE collection away: the ring is empty until the test adds one. */
-	public Trace noBaselineCollection()
-	{
-		baselineCollection = false;
 		return this;
 	}
 
@@ -702,17 +567,6 @@ public final class Trace
 		return this;
 	}
 
-	/** {@code usedMb} of heap used in {@code fromSec .. toSec}. */
-	public Trace heap(int fromSec, int toSec, int usedMb)
-	{
-		checkSpan(fromSec, toSec);
-		for (int s = fromSec; s <= toSec; s++)
-		{
-			col[HEAP][s] = usedMb;
-		}
-		return this;
-	}
-
 	/** The session's operating system, and the default settings' too. */
 	public Trace os(Os os)
 	{
@@ -750,9 +604,7 @@ public final class Trace
 		final int[][] moved = new int[COLUMNS][n + k];
 		for (int c = 0; c < COLUMNS; c++)
 		{
-			final boolean unknown = busyUnknown && (c == BUSY || c == WORST_BUSY)
-				|| cpuUnknown && (c == SYS_CPU || c == PROC_CPU);
-			Arrays.fill(moved[c], 0, k, unknown ? -1 : STEADY[c]);
+			Arrays.fill(moved[c], 0, k, STEADY[c]);
 			System.arraycopy(col[c], 0, moved[c], k, n);
 		}
 		col = moved;
@@ -788,11 +640,6 @@ public final class Trace
 			f[0] += by;
 			f[1] += by;
 		}
-		for (long[] g : gcs)
-		{
-			g[0] += by;
-		}
-		baselineGcMs += by;
 		for (int i = 0; i < maskStarts.size(); i++)
 		{
 			maskStarts.set(i, maskStarts.get(i) + by);
@@ -853,8 +700,6 @@ public final class Trace
 			f.worstFrameMs = col[WORST][sec];
 			f.worstFrameEndMs = col[WORST_END][sec];
 			f.slowFrames = col[SLOW][sec];
-			f.busyPm = col[BUSY][sec];
-			f.worstBusyPm = col[WORST_BUSY][sec];
 			f.loadingMs = col[LOADING][sec];
 			f.state = col[STATE][sec];
 			f.flags = flags[sec];
@@ -867,9 +712,6 @@ public final class Trace
 			h.rttAgeS = col[RTT_AGE][sec];
 			h.sentUnits = col[SENT][sec];
 			h.resentUnits = col[RESENT][sec];
-			h.heapUsedMb = col[HEAP][sec];
-			h.procCpuPct = col[PROC_CPU][sec];
-			h.sysCpuPct = col[SYS_CPU][sec];
 			h.conn = conn[sec];
 			s.seconds.putHost(sec, h);
 		}
@@ -893,16 +735,6 @@ public final class Trace
 			first = false;
 		}
 
-		if (baselineCollection)
-		{
-			s.gcs.put(baselineGcMs, -1, HEAP_AFTER_MB);
-		}
-		final List<long[]> byStart = new ArrayList<>(gcs);
-		byStart.sort(Comparator.comparingLong(g -> g[0]));
-		for (long[] g : byStart)
-		{
-			s.gcs.put(g[0], (int) g[1], (int) g[2]);
-		}
 		s.loggedInSince(loggedInSince);
 		if (usualRttMs >= 0)
 		{
@@ -921,8 +753,7 @@ public final class Trace
 		{
 			return settings;
 		}
-		return new SettingsView(Renderer.CPU, false, false, 0, false, 0, false, "", 0, 0, "", 0, REFRESH_HZ,
-			HEAP_MAX_MB, MemorySource.MANAGEMENT, os, "");
+		return new SettingsView(Renderer.CPU, false, false, 0, false, 0, false, "", 0, 0, "", 0, REFRESH_HZ, os, "");
 	}
 
 	/** How many seconds the trace holds. */
@@ -950,8 +781,6 @@ public final class Trace
 		col[WORST][s] = 0;
 		col[WORST_END][s] = 0;
 		col[SLOW][s] = 0;
-		col[BUSY][s] = -1;
-		col[WORST_BUSY][s] = -1;
 		col[FLAGS][s] |= Flags.NO_FRAMES;
 	}
 
@@ -1009,15 +838,6 @@ public final class Trace
 		if (toSec < fromSec)
 		{
 			throw new IllegalArgumentException("the span " + fromSec + " .. " + toSec + " runs backwards");
-		}
-	}
-
-	/** A share in %: 0 or more, or -1 for unknown. */
-	private static void checkShare(String what, int pct)
-	{
-		if (pct < -1)
-		{
-			throw new IllegalArgumentException(what + " is 0 % or more, or -1 for unknown; got " + pct);
 		}
 	}
 

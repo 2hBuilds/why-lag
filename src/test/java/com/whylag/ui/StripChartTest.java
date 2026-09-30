@@ -32,27 +32,26 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * The five lanes behind "Graphs" (contract 5.3): 213 x 166 with lanes at y 0, 30, 60, 90 and 120 and the axis at
- * y 150; a band over the columns of its event's seconds, redder in its cause's lane, orange-framed when selected;
- * a gap where a column has no data; the axis labels of each range; a selected event's five lane values; the grey
- * game line under the PC line; the CPU lane's two halves; one "-" for a lane with no value; and the tooltip, which
- * names a column's clock and its six numbers, or says why the CPU lane is empty.
+ * The three lanes behind "Graphs" (contract 5.3): 213 x 106 with lanes at y 0, 30 and 60 and the axis at y 90; a
+ * band over the columns of its event's seconds, redder in its cause's lane, orange-framed when selected; a gap where
+ * a column has no data; the axis labels of each range; a selected event's three lane values; one "-" for a lane
+ * with no value; and the tooltip, which names a column's clock and its three numbers.
  */
 public class StripChartTest
 {
 	@Test
-	public void fiveLanes()
+	public void threeLanes()
 	{
 		final StripChart chart = panel(PanelFixtures.quiet(), true).strips();
 		assertEquals(213, chart.getPreferredSize().width);
-		assertEquals(166, chart.getPreferredSize().height);
+		assertEquals(106, chart.getPreferredSize().height);
 		final BufferedImage img = PanelFixtures.paint(chart);
-		for (int lane = 0; lane < 5; lane++)
+		for (int lane = 0; lane < 3; lane++)
 		{
 			final int y = 30 * lane;
 			assertTrue("lane " + lane + " starts at y " + y, is(img, 100, y, Ui.CARD));
 			assertTrue("lane " + lane + " is 27 high", is(img, 100, y + 26, Ui.CARD));
-			if (lane < 4)
+			if (lane < 2)
 			{
 				for (int gap = 27; gap < 30; gap++)
 				{
@@ -61,20 +60,20 @@ public class StripChartTest
 			}
 			assertTrue("a line in the lane's rows 13 .. 25", lineRow(img, 100, y) >= y + 13);
 		}
-		for (int y = 147; y < 150; y++)
+		for (int y = 87; y < 90; y++)
 		{
 			assertTrue(is(img, 100, y, Ui.GROUND));
 		}
 		for (int x = 0; x < 213; x++)
 		{
-			assertTrue("the axis line at y 150, x " + x, is(img, x, 150, Ui.RULE));
+			assertTrue("the axis line at y 90, x " + x, is(img, x, 90, Ui.RULE));
 		}
 		for (int x : new int[] {0, 71, 142, 212})
 		{
-			assertTrue("a 3 px tick at x " + x, is(img, x, 151, Ui.RULE) && is(img, x, 152, Ui.RULE));
-			assertFalse(is(img, x, 153, Ui.RULE));
+			assertTrue("a 3 px tick at x " + x, is(img, x, 91, Ui.RULE) && is(img, x, 92, Ui.RULE));
+			assertFalse(is(img, x, 93, Ui.RULE));
 		}
-		assertTrue("no tick at x 72", is(img, 72, 151, Ui.GROUND));
+		assertTrue("no tick at x 72", is(img, 72, 91, Ui.GROUND));
 		final List<Drawn> drawn = record(chart);
 		for (Lane lane : Lane.values())
 		{
@@ -86,7 +85,7 @@ public class StripChartTest
 		}
 	}
 
-	/** A band runs from the column of its first millisecond to that of its last, across all five lanes. */
+	/** A band runs from the column of its first millisecond to that of its last, across all three lanes. */
 	@Test
 	public void bandCoversItsSeconds()
 	{
@@ -97,7 +96,7 @@ public class StripChartTest
 		assertEquals(117, a);
 		assertEquals(122, b);
 		final BufferedImage img = PanelFixtures.paint(p.strips());
-		for (int lane = 0; lane < 5; lane++)
+		for (int lane = 0; lane < 3; lane++)
 		{
 			final int y = 30 * lane + 26;
 			final Color band = over(lane == Lane.TICKS.ordinal() ? Ui.BAND_CULPRIT : Ui.BAND, Ui.CARD);
@@ -135,7 +134,7 @@ public class StripChartTest
 		final Color culprit = over(Ui.BAND_CULPRIT, Ui.CARD);
 		int plains = 0;
 		int culprits = 0;
-		for (int lane = 0; lane < 5; lane++)
+		for (int lane = 0; lane < 3; lane++)
 		{
 			for (int x = 0; x < 213; x++)
 			{
@@ -146,12 +145,8 @@ public class StripChartTest
 				culprits += c.equals(culprit) ? 1 : 0;
 			}
 		}
-		assertTrue("plain bands: " + plains, plains > 100);
-		assertTrue("culprit bands in the four blamed lanes: " + culprits, culprits > 100);
-		for (int x = 0; x < 213; x++)
-		{
-			assertFalse("no wave-one cause blames the CPU lane", pixel(img, x, 120 + 26).equals(culprit));
-		}
+		assertTrue("plain bands: " + plains, plains > 0);
+		assertTrue("culprit bands in the blamed lanes: " + culprits, culprits > 100);
 	}
 
 	@Test
@@ -164,7 +159,7 @@ public class StripChartTest
 		assertEquals(over(Ui.BAND, Ui.CARD), other);
 		assertTrue(culprit + " is redder than " + other,
 			culprit.getRed() - culprit.getGreen() > other.getRed() - other.getGreen() + 30);
-		for (int lane : new int[] {0, 2, 3, 4})
+		for (int lane : new int[] {0, 2})
 		{
 			assertEquals("not the culprit, lane " + lane, other, pixel(img, 119, 30 * lane + 26));
 		}
@@ -180,7 +175,7 @@ public class StripChartTest
 		assertEquals(117, cols[0]);
 		assertEquals(122, cols[1]);
 		int rows = 0;
-		for (int y = 0; y <= 147; y++)
+		for (int y = 0; y <= 87; y++)
 		{
 			// The lane texts are drawn over the frame: its sides show wherever no text lies on them.
 			if (!underText(texts, 117, y) && !underText(texts, 122, y))
@@ -190,12 +185,12 @@ public class StripChartTest
 				rows++;
 			}
 		}
-		assertTrue("the sides were seen on most rows: " + rows, rows > 130);
+		assertTrue("the sides were seen on most rows: " + rows, rows > 70);
 		for (int x = 117; x <= 122; x++)
 		{
 			assertTrue("top at " + x, is(img, x, 0, Ui.ORANGE));
-			assertTrue("bottom at " + x, is(img, x, 147, Ui.ORANGE));
-			assertFalse("the frame stops at y 147", is(img, x, 148, Ui.ORANGE));
+			assertTrue("bottom at " + x, is(img, x, 87, Ui.ORANGE));
+			assertFalse("the frame stops at y 87", is(img, x, 88, Ui.ORANGE));
 		}
 		assertFalse("the frame is 1 px: the column left of it is not orange", is(img, 116, 70, Ui.ORANGE));
 		assertFalse(is(img, 123, 70, Ui.ORANGE));
@@ -203,7 +198,7 @@ public class StripChartTest
 		assertEquals("its cause's lane stays the culprit's", over(Ui.BAND_CULPRIT, Ui.CARD), pixel(img, 119, 56));
 
 		final BufferedImage unselected = PanelFixtures.paint(panel(PanelFixtures.clearHere(), true).strips());
-		for (int y = 0; y < 150; y++)
+		for (int y = 0; y < 90; y++)
 		{
 			assertFalse("no frame without a selection, y " + y, is(unselected, 117, y, Ui.ORANGE));
 		}
@@ -224,15 +219,6 @@ public class StripChartTest
 		}
 		assertTrue("the line before the gap", lineRow(img, 45, 0) >= 13);
 		assertTrue("the line after the gap", lineRow(img, 65, 0) >= 13);
-
-		final BufferedImage none = PanelFixtures.paint(panel(PanelFixtures.cpuNone(), true).strips());
-		for (int x = 0; x < 213; x++)
-		{
-			for (int y = 120 + 13; y <= 120 + 25; y++)
-			{
-				assertTrue("the empty CPU lane at " + x + "," + y, is(none, x, y, Ui.CARD));
-			}
-		}
 	}
 
 	@Test
@@ -261,7 +247,7 @@ public class StripChartTest
 		final PanelSnapshot q = PanelFixtures.quiet().snapshot;
 		final PanelSnapshot held = new PanelSnapshot(q.wallMs, q.zone, q.world, q.verdict, q.tiles, 1,
 			q.rangeEndWallMs - 30_000, q.rangeEndWallMs, q.strips, q.rangeEvents, q.sessionEvents, q.sessionCounts,
-			q.sessionTotal, q.sessionStartWallMs, q.sysCpuPct, q.gameBusyPct, q.settings, q.footer);
+			q.sessionTotal, q.sessionStartWallMs, q.settings, q.footer);
 		assertTrue(held.stretched());
 		assertFalse(q.stretched());
 		final WhyLagPanel p = panel(new Fixture("stretched", held, -1), true);
@@ -275,14 +261,14 @@ public class StripChartTest
 		for (String label : labels)
 		{
 			final Drawn d = find(drawn, label);
-			assertEquals(164, d.y);
+			assertEquals(104, d.y);
 			assertEquals(Ui.RSS, d.font);
 			assertEquals(Ui.LABEL.getRGB(), d.colour.getRGB());
 		}
-		assertEquals(164, find(drawn, "now").y);
+		assertEquals(104, find(drawn, "now").y);
 	}
 
-	/** With an event selected the five values are its own, the Game half too; the tiles' levels colour them. */
+	/** With an event selected the three values are its own; the tiles' levels colour them. */
 	@Test
 	public void selectedEventLaneValues()
 	{
@@ -291,7 +277,7 @@ public class StripChartTest
 		final String[] values = EventView.laneValues(d);
 		final Level[] levels = EventView.laneLevels(d);
 		final List<Drawn> drawn = record(p.strips());
-		for (int i = 0; i < 5; i++)
+		for (int i = 0; i < 3; i++)
 		{
 			assertEquals(values[i], p.strips().value(i));
 			final Drawn v = find(drawn, values[i], Ui.textColour(levels[i]));
@@ -299,63 +285,12 @@ public class StripChartTest
 		}
 		assertEquals("50 fps", values[0]);
 		assertEquals("952 ms", values[1]);
-		assertEquals("PC 37 %", values[4]);
-		assertEquals(EventView.cpuGameValue(d), p.strips().gameValue());
-		assertEquals("Game 95 %", find(drawn, "Game 95 %", Ui.LABEL).text);
+		assertEquals("41 ms", values[2]);
 		assertEquals("the ticks value is red text", Ui.BAD_TEXT.getRGB(), find(drawn, "952 ms", Ui.BAD_TEXT).colour
 			.getRGB());
 
 		edt(p, -1);
 		assertEquals("cleared: the snapshot's own values", "600 ms", p.strips().value(1));
-		assertEquals("Game 45 %", p.strips().gameValue());
-	}
-
-	/** The grey game line is drawn first: where the two lines meet, the pixel is the PC line's. */
-	@Test
-	public void secondSeriesIsDrawnUnderTheFirst()
-	{
-		final Lanes same = new Lanes(10).cpu(42, Level.OK, "PC 42 %").game(42, "Game 42 %");
-		final BufferedImage img = PanelFixtures.paint(chartOf(snapshotOf(same)));
-		final int y = StripChart.yOf(42, 120, 0, 100);
-		assertTrue("the PC line's colour on top", is(img, 100, y, Ui.OK));
-
-		final Lanes apart = new Lanes(10).cpu(20, Level.OK, "PC 20 %").game(80, "Game 80 %");
-		final BufferedImage two = PanelFixtures.paint(chartOf(snapshotOf(apart)));
-		assertTrue("the game line in grey", is(two, 100, StripChart.yOf(80, 120, 0, 100), Ui.LABEL));
-		assertTrue("the PC line in its level's colour", is(two, 100, StripChart.yOf(20, 120, 0, 100), Ui.OK));
-	}
-
-	@Test
-	public void cpuValueFitsBesideItsLabel()
-	{
-		final List<Drawn> drawn = record(panel(PanelFixtures.cpuFull(), true).strips());
-		final Drawn pc = find(drawn, "PC 100 %", Ui.BAD_TEXT);
-		final Drawn game = find(drawn, "Game 100 %", Ui.LABEL);
-		final Drawn label = find(drawn, "CPU");
-		assertEquals(210, pc.right());
-		assertEquals("11 px left of the PC half", pc.x - 11, game.right());
-		assertTrue("clear of the label: " + game.x + " > " + label.right(), game.x > label.right());
-		assertEquals(pc.y, game.y);
-	}
-
-	@Test
-	public void cpuHalvesAreLeftOutWhenUnknown()
-	{
-		final List<Drawn> pcOnly = cpuTexts(PanelFixtures.cpuPcOnly());
-		assertEquals(1, pcOnly.size());
-		assertEquals("PC 37 %", pcOnly.get(0).text);
-		assertEquals(210, pcOnly.get(0).right());
-
-		final List<Drawn> gameOnly = cpuTexts(PanelFixtures.cpuGameOnly());
-		assertEquals(1, gameOnly.size());
-		assertEquals("Game 42 %", gameOnly.get(0).text);
-		assertEquals("a Game half alone is right-aligned at x 210", 210, gameOnly.get(0).right());
-
-		final List<Drawn> none = cpuTexts(PanelFixtures.cpuNone());
-		assertEquals(1, none.size());
-		assertEquals("-", none.get(0).text);
-		assertEquals(210, none.get(0).right());
-		assertEquals(Ui.LABEL.getRGB(), none.get(0).colour.getRGB());
 	}
 
 	/** Not logged in: every lane's value is "", and each draws one "-" in LABEL, right-aligned at x 210. */
@@ -374,41 +309,35 @@ public class StripChartTest
 				assertEquals(0, (d.y - 11) % 30);
 			}
 		}
-		assertEquals("one dash on each of the five lanes", 5, dashes);
+		assertEquals("one dash on each of the three lanes", 3, dashes);
 	}
 
 	@Test
-	public void emptyCpuLaneSaysWhy()
+	public void aColumnWithNoDataSaysDashes()
 	{
-		final StripChart none = panel(PanelFixtures.cpuNone(), true).strips();
-		assertEquals("No CPU data on this PC", tip(none, 100, 130));
-		assertEquals("No CPU data on this PC", tip(none, 5, 146));
-		assertTrue(tip(none, 100, 10), tip(none, 100, 10).endsWith("PC -, game -"));
-		assertNull("no tooltip on the axis", tip(none, 100, 147));
-		assertNull(tip(none, 100, 160));
-
 		final StripChart out = panel(PanelFixtures.notLoggedIn(), true).strips();
-		assertEquals("every column of every strip is empty", "Not logged in", tip(out, 100, 130));
-		assertTrue(tip(out, 100, 40).endsWith("- fps -, ticks -, ping -, memory -, PC -, game -"));
+		assertTrue(tip(out, 100, 40), tip(out, 100, 40).endsWith("- fps -, ticks -, ping -"));
+		assertNull("no tooltip on the axis", tip(out, 100, 87));
+		assertNull(tip(out, 100, 100));
 	}
 
 	@Test
-	public void tooltipNamesTheColumnAndItsFiveValues()
+	public void tooltipNamesTheColumnAndItsThreeValues()
 	{
 		final WhyLagPanel p = panel(PanelFixtures.lag(), true);
 		final PanelSnapshot s = p.last();
 		final long at = Strip.columnStart(s.rangeStartWallMs, s.rangeEndWallMs, 119);
 		assertEquals("21:47:35", Fmt.clockSeconds(at, ZONE));
-		final String expected = "21:47:35 - 50 fps, ticks 1,240 ms, ping 41 ms, memory 51 %, PC 24 %, game 45 %";
+		final String expected = "21:47:35 - 50 fps, ticks 1,240 ms, ping 41 ms";
 		assertEquals(expected, tip(p.strips(), 119, 40));
 		assertEquals("between the lanes too", expected, tip(p.strips(), 119, 28));
-		assertEquals("over the CPU lane when it has data", expected, tip(p.strips(), 119, 140));
+		assertEquals("over the last lane", expected, tip(p.strips(), 119, 80));
 		edt(p, -1);
 		assertEquals("a selection does not change it", expected, tip(p.strips(), 119, 40));
 
 		final StripChart gappy = chartOf(gappy());
 		final String hole = tip(gappy, 55, 10);
-		assertTrue(hole, hole.contains(" - fps -, ticks 600 ms, ping 41 ms, memory 51 %, PC 24 %, game 42 %"));
+		assertTrue(hole, hole.contains(" - fps -, ticks 600 ms, ping 41 ms"));
 		assertEquals("the column under the mouse, x held to 0 .. 212", tip(gappy, 212, 10), tip(gappy, 250, 10));
 	}
 
@@ -428,7 +357,7 @@ public class StripChartTest
 	private static PanelSnapshot snapshotOf(Lanes lanes)
 	{
 		return PanelFixtures.snapshot(WORLD, PanelFixtures.clearAfter(WORLD), PanelFixtures.quietTiles(), 10,
-			lanes.build(), Collections.emptyList(), 24, 42);
+			lanes.build(), Collections.emptyList());
 	}
 
 	private static StripChart chartOf(PanelSnapshot s)
@@ -470,20 +399,6 @@ public class StripChartTest
 	private static void edt(WhyLagPanel p, long select)
 	{
 		PanelFixtures.edt(() -> p.select(select));
-	}
-
-	/** The CPU lane's value texts (no label, no shadows). */
-	private static List<Drawn> cpuTexts(Fixture f)
-	{
-		final List<Drawn> out = new ArrayList<>();
-		for (Drawn d : texts(record(panel(f, true).strips())))
-		{
-			if (d.y == 120 + 11 && !d.text.equals("CPU"))
-			{
-				out.add(d);
-			}
-		}
-		return out;
 	}
 
 	/** The strings drawn, less the black shadows. */

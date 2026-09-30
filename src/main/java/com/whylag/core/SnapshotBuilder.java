@@ -5,23 +5,23 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Builds what the panel reads (contract 3.8, 5.2, 5.3; lot L5): the four tiles, the five strips with the value at the
- * right of each lane, the CPU and the world of now, the range's events, the session's events and the session counts.
+ * Builds what the panel reads (contract 3.8, 5.2, 5.3; lot L5): the three tiles, the three strips with the value at
+ * the right of each lane, the world of now, the range's events, the session's events and the session counts.
  * The plugin calls it once a second on the sampler thread, under the engine's step lock, while the panel shows. It
  * only READS the session - the rings, the event log and this world's RTT usual - and writes nothing: it keeps no state
  * of its own, so one instance serves every call.
  *
  * <p><b>Now.</b> Every "now" is the newest COMPLETE second, {@code last = s.lastSec(nowSec)} (contract 3.5); -1 means
  * none yet. The player is logged in when that second exists and its state is in-game ({@link State#inGame}). While
- * not, every tile is "-" with "Not logged in", every lane has no value now, the snapshot's {@code world} is 0 whatever
- * the world column holds, and its two CPU numbers are -1. The warm-up is the card's alone: the tiles show their
+ * not, every tile is "-" with "Not logged in", every lane has no value now and the snapshot's {@code world} is 0
+ * whatever the world column holds. The warm-up is the card's alone: the tiles show their
  * numbers through it, and nothing here reads {@link Session#warm}.
  *
  * <p><b>The window</b> (contract 3.5) is the seconds {@code last - WINDOW_S + 1 .. last}, none before the ring's
  * tail. Its ticks are those that arrived in {@code [msOfSec(first), msOfSec(last + 1))} and are not masked: no bit
  * of {@link Flags#MASKED} on the tick nor on the second it arrived in (a hop's or a teleport's tick is no lag). The
  * Frame rate tile's "worst" is the largest {@code worstFrameMs} of the window's seconds; the Server ticks tile reads
- * the window's ticks; the memory tile's pause is the longest known pause over the window's first to its last ms.
+ * the window's ticks.
  *
  * <p><b>The time map</b> (contract 5.3). The range ends at the end of the newest second: {@code msOfSec(last + 1)} in
  * session ms, {@code s.wallMsOf(last + 1)} in wall ms, and starts {@code rangeMinutes x 60,000} ms before it - or at
@@ -31,11 +31,10 @@ import java.util.List;
  * belongs to every column its milliseconds touch and COUNTS when it is readable, no later than {@code last}, and not
  * flagged NOT_LOGGED_IN. A tick's gap belongs to the columns of the time it spanned, {@code atMs - gapMs .. atMs}; it
  * counts when it arrived before the range's end and is not masked (above). A column with no counting second is
- * {@link Strip#NONE} in all five lanes; a column whose counting seconds are all masked ({@link Flags#masked}) is
- * {@link Strip#NONE} in the frame rate and ticks lanes, so a load's frame-rate dip and a hop's tick gap are not drawn. A column holds the WORST of its slice: the lowest {@code frames}, the largest
- * gap, the highest FRESH RTT, the highest whole-PC CPU and the highest {@link Fmt#busyPct} of {@code busyPm}; a -1
- * counts for nothing. The memory lane holds the heap AFTER collection, {@link GcRing#heapAfterAt} at the column's last
- * ms, and is empty before the first collection and whenever the heap limit is unknown (0 or less).
+ * {@link Strip#NONE} in all three lanes; a column whose counting seconds are all masked ({@link Flags#masked}) is
+ * {@link Strip#NONE} in the frame rate and ticks lanes, so a load's frame-rate dip and a hop's tick gap are not
+ * drawn. A column holds the WORST of its slice: the lowest {@code frames}, the largest gap, the highest FRESH RTT;
+ * a -1 counts for nothing.
  *
  * <p><b>Reading the rings.</b> A second or a tick is read and then checked with {@code valid} again; a read that fails
  * the check is thrown away, as contract 3.3 asks. The event log's lists and counts are read in one hold of its lock.
@@ -44,16 +43,14 @@ import java.util.List;
  * <p>Choice: with no complete second yet the range is the full chosen range (nothing is drawn); the stretch starts
  * with the first second.
  * <p>Choice: a column that holds both masked and unmasked seconds keeps the worst UNMASKED tick and frame rate; only a
- * column with no unmasked second is a gap. The ping, memory and CPU lanes keep masked seconds: they are real readings
- * (a load does use the CPU), not a lag the game made.
- * <p>Choice: a null settings view is built as {@code SettingsView.unknown(0, s.os, RUNTIME)}, so nothing throws.
+ * column with no unmasked second is a gap. The ping lane keeps masked seconds: they are real readings, not a lag
+ * the game made.
+ * <p>Choice: a null settings view is built as {@code SettingsView.unknown(s.os)}, so nothing throws.
  * <p>Choice: the event log is read under its own lock, so the listed events, the counts and the total agree.
  * <p>Choice: the frame rate scale's "highest seen" is the highest column value drawn.
  * <p>Choice: the ping scale rounds {@code highest x STRIP_PING_PAD_PCT / 100} UP, so its top is at least that share.
  * <p>Choice: the Ping tile shows its RTT only while {@code conn} is NONE and the RTT is 0 or more; else "Nothing sent".
  * <p>Choice: a newest second with a negative frame count is a Frame rate dash with "Could not read it" (never written).
- * <p>Choice: with no heap figure in any readable second the memory tile is a dash with "Could not read it".
- * <p>Choice: the memory tile, the memory lane's value and its last column share ONE heapAfterAt read of the last ms.
  */
 public final class SnapshotBuilder implements SnapshotSource
 {
@@ -79,20 +76,17 @@ public final class SnapshotBuilder implements SnapshotSource
 	public PanelSnapshot build(Session s, Verdict shown, int rangeMinutes, long nowSec, long wallMs,
 		SettingsView settings, String footer)
 	{
-		final SettingsView view = settings != null ? settings : SettingsView.unknown(0, s.os, MemorySource.RUNTIME);
+		final SettingsView view = settings != null ? settings : SettingsView.unknown(s.os);
 		final int minutes = Math.max(SHORTEST_RANGE_MINUTES, rangeMinutes);
 		final Pass p = new Pass(s, view, minutes, nowSec);
 		p.readNewest();
 		p.readSeconds();
 		p.readTicks();
-		p.readMemory();
-		final Tile[] tiles = {p.frameTile(), p.tickTile(), p.pingTile(), p.memoryTile()};
+		final Tile[] tiles = {p.frameTile(), p.tickTile(), p.pingTile()};
 		final Strip[] strips = {
 			p.frameStrip(tiles[Lane.FRAME_RATE.ordinal()]),
 			p.tickStrip(tiles[Lane.TICKS.ordinal()]),
-			p.pingStrip(tiles[Lane.PING.ordinal()]),
-			p.memoryStrip(tiles[Lane.MEMORY.ordinal()]),
-			p.cpuStrip()};
+			p.pingStrip(tiles[Lane.PING.ordinal()])};
 
 		final List<LagEvent> rangeEvents;
 		final List<LagEvent> sessionEvents = new ArrayList<>();
@@ -119,10 +113,10 @@ public final class SnapshotBuilder implements SnapshotSource
 		final long rangeEndWallMs = s.wallMsOf(p.last + 1);
 		return new PanelSnapshot(wallMs, s.zone, p.worldNow(), shown, tiles, minutes,
 			rangeEndWallMs - (p.endMs - p.startMs), rangeEndWallMs, strips, rangeEvents, sessionEvents, counts, total,
-			s.startWallMs, p.sysCpuPctNow(), p.gameBusyPctNow(), view, footer);
+			s.startWallMs, view, footer);
 	}
 
-	/** The work of one build: the reads of the newest second, the window's sums, and the columns of the five lanes. */
+	/** The work of one build: the reads of the newest second, the window's sums, and the columns of the three lanes. */
 	private static final class Pass
 	{
 		private final Session s;
@@ -145,8 +139,6 @@ public final class SnapshotBuilder implements SnapshotSource
 		private int world;
 		private int rttMs = -1;
 		private NoData conn = NoData.NONE;
-		private int sysCpuPct = -1;
-		private int busyPm = -1;
 
 		// The window.
 		private int worstFrameMs;
@@ -168,11 +160,6 @@ public final class SnapshotBuilder implements SnapshotSource
 		private final int[] gaps = none();
 		private final int[] corrected = none();
 		private final int[] ping = none();
-		private final int[] pc = none();
-		private final int[] game = none();
-		private final int[] memory = none();
-		/** {@code heapAfterAt} at the range's last ms: the tile's, the lane value's and the last column's one read. */
-		private int heapAfterLast = -1;
 
 		Pass(Session s, SettingsView settings, int minutes, long nowSec)
 		{
@@ -203,8 +190,6 @@ public final class SnapshotBuilder implements SnapshotSource
 			final int w = r.world(last);
 			final int rtt = r.rttMs(last);
 			final NoData c = r.conn(last);
-			final int sys = r.sysCpuPct(last);
-			final int busy = r.busyPm(last);
 			if (!r.valid(last))
 			{
 				return;
@@ -215,8 +200,6 @@ public final class SnapshotBuilder implements SnapshotSource
 			world = w;
 			rttMs = rtt;
 			conn = c;
-			sysCpuPct = sys;
-			busyPm = busy;
 		}
 
 		/** One pass over the range's seconds: the window's worst frame, and the second lanes' columns. */
@@ -234,8 +217,6 @@ public final class SnapshotBuilder implements SnapshotSource
 				final int worst = r.worstFrameMs(k);
 				final int rtt = r.rttMs(k);
 				final int age = r.rttAgeS(k);
-				final int sys = r.sysCpuPct(k);
-				final int busy = r.busyPm(k);
 				if (!r.valid(k))
 				{
 					continue;
@@ -253,7 +234,6 @@ public final class SnapshotBuilder implements SnapshotSource
 				final int c1 = Math.min(LAST_COLUMN, Strip.columnOf(startMs, endMs, at + LAST_MS_OF_SECOND));
 				final boolean foc = Flags.has(flags, Flags.FOCUSED);
 				final boolean fresh = rtt >= 0 && age >= 0 && age <= Thresholds.RTT_STALE_S;
-				final int g = Fmt.busyPct(busy);
 				final boolean clear = !Flags.masked(flags);
 				for (int c = c0; c <= c1; c++)
 				{
@@ -268,14 +248,6 @@ public final class SnapshotBuilder implements SnapshotSource
 					if (fresh && rtt > ping[c])
 					{
 						ping[c] = rtt;
-					}
-					if (sys >= 0 && sys > pc[c])
-					{
-						pc[c] = sys;
-					}
-					if (g >= 0 && g > game[c])
-					{
-						game[c] = g;
 					}
 				}
 			}
@@ -337,29 +309,6 @@ public final class SnapshotBuilder implements SnapshotSource
 					{
 						corrected[c] = corr;
 					}
-				}
-			}
-		}
-
-		/** The heap after collection at the range's last ms and at each counting column's last ms. */
-		void readMemory()
-		{
-			if (last < 0)
-			{
-				return;
-			}
-			heapAfterLast = s.gcs.heapAfterAt(endMs - 1);
-			if (settings.heapMaxMb <= 0)
-			{
-				return;   // the limit is unknown: every column stays empty and nothing is divided by it (3.7)
-			}
-			for (int c = 0; c < COLUMNS; c++)
-			{
-				if (counting[c])
-				{
-					final long lastMs = Strip.columnStart(startMs, endMs, c + 1) - 1;
-					final int after = lastMs == endMs - 1 ? heapAfterLast : s.gcs.heapAfterAt(lastMs);
-					memory[c] = after < 0 ? Strip.NONE : after;
 				}
 			}
 		}
@@ -433,34 +382,6 @@ public final class SnapshotBuilder implements SnapshotSource
 			return new Tile(Lane.PING, Levels.ping(rttMs), Fmt.thousands(rttMs) + " ms", sub, NoData.NONE);
 		}
 
-		/**
-		 * Used heap of the limit, with the longest known pause of the window ("pause 0 ms": measured, none) or
-		 * "pause n/a" on the RUNTIME source; the level is the worse of the heap after collection and that pause.
-		 */
-		Tile memoryTile()
-		{
-			if (!loggedIn)
-			{
-				return dash(Lane.MEMORY, NoData.NOT_LOGGED_IN);
-			}
-			final int limit = settings.heapMaxMb;
-			if (limit <= 0)
-			{
-				return dash(Lane.MEMORY, NoData.ERROR);
-			}
-			final int used = newestHeapUsedMb();
-			if (used < 0)
-			{
-				return dash(Lane.MEMORY, NoData.ERROR);
-			}
-			final int pause = settings.memorySource == MemorySource.MANAGEMENT
-				? s.gcs.longestPauseMs(s.msOfSec(windowFirst), endMs - 1)
-				: -1;
-			final String sub = pause < 0 ? "pause n/a" : "pause " + Fmt.thousands(pause) + " ms";
-			return new Tile(Lane.MEMORY, Levels.memory(heapAfterPct(), pause),
-				Fmt.thousands(percentOf(used, limit)) + " %", sub, NoData.NONE);
-		}
-
 		/** Frame rate: 0 .. max(STRIP_FPS_MAX, the newest second's cap, the highest column); each column by its cap. */
 		Strip frameStrip(Tile tile)
 		{
@@ -521,89 +442,10 @@ public final class SnapshotBuilder implements SnapshotSource
 				levelOf(tile));
 		}
 
-		/** Memory: heap after collection, 0 .. the limit (0 .. 0 when it is unknown); the value is its last %. */
-		Strip memoryStrip(Tile tile)
-		{
-			final byte[] levels = noDataLevels();
-			final int limit = settings.heapMaxMb;
-			if (limit > 0)
-			{
-				for (int c = 0; c < COLUMNS; c++)
-				{
-					if (memory[c] != Strip.NONE)
-					{
-						levels[c] = ordinal(Levels.memory(percentOf(memory[c], limit), -1));
-					}
-				}
-			}
-			final int pct = heapAfterPct();
-			final boolean shown = tile.noData == NoData.NONE && pct >= 0;
-			return new Strip(Lane.MEMORY, memory, levels, 0, Math.max(0, limit),
-				shown ? Fmt.thousands(pct) + " %" : "", shown ? Levels.memory(pct, -1) : Level.NO_DATA);
-		}
-
-		/** CPU: the whole PC (coloured) and the game thread's share (grey, no level), 0 .. STRIP_CPU_MAX_PCT. */
-		Strip cpuStrip()
-		{
-			final byte[] levels = noDataLevels();
-			for (int c = 0; c < COLUMNS; c++)
-			{
-				if (pc[c] != Strip.NONE)
-				{
-					levels[c] = ordinal(Levels.cpu(pc[c]));
-				}
-			}
-			final int sys = sysCpuPctNow();
-			final int busy = gameBusyPctNow();
-			return new Strip(Lane.CPU, pc, levels, 0, Thresholds.STRIP_CPU_MAX_PCT, sys < 0 ? "" : Fmt.pct("PC", sys),
-				Levels.cpu(sys), game, busy < 0 ? "" : Fmt.pct("Game", busy));
-		}
-
 		/** The newest second's world while logged in; 0 while not (contract 3.8). */
 		int worldNow()
 		{
 			return loggedIn ? world : 0;
-		}
-
-		/** The newest second's whole-PC CPU %; -1 without one, and while not logged in. */
-		int sysCpuPctNow()
-		{
-			return loggedIn && sysCpuPct >= 0 ? sysCpuPct : -1;
-		}
-
-		/** The newest second's game busy %, through {@link Fmt#busyPct}; -1 without one, and while logged out. */
-		int gameBusyPctNow()
-		{
-			return loggedIn ? Fmt.busyPct(busyPm) : -1;
-		}
-
-		/** The used heap of the newest readable second at or before {@code last} that has one; -1 = none. */
-		private int newestHeapUsedMb()
-		{
-			final SecondRing r = s.seconds;
-			for (long k = last; k >= 0; k--)
-			{
-				if (!r.valid(k))
-				{
-					return -1;
-				}
-				final int used = r.heapUsedMb(k);
-				if (!r.valid(k))
-				{
-					return -1;
-				}
-				if (used >= 0)
-				{
-					return used;
-				}
-			}
-			return -1;
-		}
-
-		/** The heap after collection at the newest second's last ms, in % of the limit; -1 when either is unknown. */
-		private int heapAfterPct()
-		{
-			return heapAfterLast < 0 || settings.heapMaxMb <= 0 ? -1 : percentOf(heapAfterLast, settings.heapMaxMb);
 		}
 
 		/** The Frame rate level of {@code v} fps, under the cap in force for that focus (contract 3.7). */
@@ -627,12 +469,6 @@ public final class SnapshotBuilder implements SnapshotSource
 	private static Level levelOf(Tile t)
 	{
 		return t.noData == NoData.NONE ? t.level : Level.NO_DATA;
-	}
-
-	/** {@code part x 100 / whole}, rounded down; {@code whole} is above 0. */
-	private static int percentOf(int part, int whole)
-	{
-		return (int) Math.min(Integer.MAX_VALUE, (long) part * PERCENT / whole);
 	}
 
 	private static int[] none()

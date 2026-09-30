@@ -1,6 +1,5 @@
 package com.whylag.core;
 
-import java.lang.management.ManagementFactory;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.time.ZoneOffset;
@@ -10,7 +9,6 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import org.junit.Assume;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -19,8 +17,7 @@ import static org.junit.Assert.fail;
 
 /**
  * The second ring (contract 3.3): wrap, the two writers' heads, the one slot of slack, every column of the clamp
- * table, the reader's re-check under a live writer, its size (T15) and a put that allocates nothing. The plugin's
- * own cost meter, which borrows the allocation counter from here, is {@code SelfTimerTest}'s.
+ * table, the reader's re-check under a live writer and its size (T15).
  */
 public class SecondRingTest
 {
@@ -191,8 +188,6 @@ public class SecondRingTest
 		f.worstFrameMs = -5;
 		f.worstFrameEndMs = 1500;
 		f.slowFrames = 300;
-		f.busyPm = -1;
-		f.worstBusyPm = 99_999;
 		f.state = -3;
 		f.flags = 255;
 		f.world = 70_000;
@@ -201,7 +196,6 @@ public class SecondRingTest
 		ring.putFrame(0, f);
 		final HostSecond h = new HostSecond();
 		h.rttMs = 99_999;
-		h.heapUsedMb = -7;
 		h.sentUnits = 5_000_000;
 		h.conn = null;
 		ring.putHost(0, h);
@@ -209,15 +203,12 @@ public class SecondRingTest
 		assertEquals("-1 is kept, below it is -1", -1, ring.worstFrameMs(0));
 		assertEquals(999, ring.worstFrameEndMs(0));
 		assertEquals(127, ring.slowFrames(0));
-		assertEquals(-1, ring.busyPm(0));
-		assertEquals(32767, ring.worstBusyPm(0));
 		assertEquals(0, ring.state(0));
 		assertEquals(127, ring.flags(0));
 		assertEquals(32767, ring.world(0));
 		assertEquals(-1, ring.players(0));
 		assertEquals(65535, ring.region(0));
 		assertEquals(32767, ring.rttMs(0));
-		assertEquals(-1, ring.heapUsedMb(0));
 		assertEquals("the unit counters are whole ints", 5_000_000, ring.sentUnits(0));
 		assertEquals(NoData.NONE, ring.conn(0));
 
@@ -250,17 +241,12 @@ public class SecondRingTest
 			final int shortWant = over ? 32767 : -1;
 			assertEquals("frames @" + sec, shortWant, ring.frames(sec));
 			assertEquals("worstFrameMs @" + sec, shortWant, ring.worstFrameMs(sec));
-			assertEquals("busyPm @" + sec, shortWant, ring.busyPm(sec));
-			assertEquals("worstBusyPm @" + sec, shortWant, ring.worstBusyPm(sec));
 			assertEquals("loadingMs @" + sec, shortWant, ring.loadingMs(sec));
 			assertEquals("world @" + sec, shortWant, ring.world(sec));
 			assertEquals("players @" + sec, shortWant, ring.players(sec));
 			assertEquals("npcs @" + sec, shortWant, ring.npcs(sec));
 			assertEquals("rttMs @" + sec, shortWant, ring.rttMs(sec));
 			assertEquals("rttAgeS @" + sec, shortWant, ring.rttAgeS(sec));
-			assertEquals("heapUsedMb @" + sec, shortWant, ring.heapUsedMb(sec));
-			assertEquals("procCpuPct @" + sec, shortWant, ring.procCpuPct(sec));
-			assertEquals("sysCpuPct @" + sec, shortWant, ring.sysCpuPct(sec));
 			// worstFrameEndMs: 0 .. 999
 			assertEquals("worstFrameEndMs @" + sec, over ? 999 : 0, ring.worstFrameEndMs(sec));
 			// byte columns: 0 .. 127, a negative is 0
@@ -287,8 +273,6 @@ public class SecondRingTest
 		f.worstFrameMs = v;
 		f.worstFrameEndMs = v;
 		f.slowFrames = v;
-		f.busyPm = v;
-		f.worstBusyPm = v;
 		f.loadingMs = v;
 		f.state = v;
 		f.flags = v;
@@ -305,9 +289,6 @@ public class SecondRingTest
 		final HostSecond h = new HostSecond();
 		h.rttMs = v;
 		h.rttAgeS = v;
-		h.heapUsedMb = v;
-		h.procCpuPct = v;
-		h.sysCpuPct = v;
 		h.sentUnits = v > 0 ? 2_000_000_000 : 70_000;
 		h.resentUnits = v > 0 ? 1_500_000_000 : 40_000;
 		h.conn = null;
@@ -343,17 +324,16 @@ public class SecondRingTest
 	}
 
 	/**
-	 * Contract 3.3: {@code FrameSecond.clear()} zeroes every field but {@code busyPm = worstBusyPm = -1};
 	 * {@code HostSecond.clear()} sets every int to -1 but {@code sentUnits = resentUnits = 0}, and {@code conn} to
 	 * NONE. Every field is set to a value that is neither 0 nor -1 first, then cleared and checked one by one - a
-	 * clear() that left {@code sysCpuPct} at 0 would turn every gap-filled second into "PC 0 %". A new carrier is a
+	 * clear() that left {@code rttMs} at 0 would turn every gap-filled second into "ping 0 ms". A new carrier is a
 	 * cleared one. The field counts keep this test whole: a new field needs its own lines here.
 	 */
 	@Test
 	public void aNewCarrierIsCleared()
 	{
-		assertEquals("FrameSecond's fields, each named below", 13, instanceFields(FrameSecond.class));
-		assertEquals("HostSecond's fields, each named below", 8, instanceFields(HostSecond.class));
+		assertEquals("FrameSecond's fields, each named below", 11, instanceFields(FrameSecond.class));
+		assertEquals("HostSecond's fields, each named below", 5, instanceFields(HostSecond.class));
 
 		assertFrameCleared(new FrameSecond());
 		final FrameSecond f = new FrameSecond();
@@ -361,8 +341,6 @@ public class SecondRingTest
 		f.worstFrameMs = 2;
 		f.worstFrameEndMs = 3;
 		f.slowFrames = 4;
-		f.busyPm = 5;
-		f.worstBusyPm = 6;
 		f.loadingMs = 7;
 		f.state = 8;
 		f.flags = 9;
@@ -379,9 +357,6 @@ public class SecondRingTest
 		h.rttAgeS = 2;
 		h.sentUnits = 3;
 		h.resentUnits = 4;
-		h.heapUsedMb = 5;
-		h.procCpuPct = 6;
-		h.sysCpuPct = 7;
 		h.conn = NoData.ERROR;
 		h.clear();
 		assertHostCleared(h);
@@ -393,8 +368,6 @@ public class SecondRingTest
 		assertEquals("worstFrameMs", 0, f.worstFrameMs);
 		assertEquals("worstFrameEndMs", 0, f.worstFrameEndMs);
 		assertEquals("slowFrames", 0, f.slowFrames);
-		assertEquals("busyPm: not measured", -1, f.busyPm);
-		assertEquals("worstBusyPm: not measured", -1, f.worstBusyPm);
 		assertEquals("loadingMs", 0, f.loadingMs);
 		assertEquals("state", 0, f.state);
 		assertEquals("flags", 0, f.flags);
@@ -410,9 +383,6 @@ public class SecondRingTest
 		assertEquals("rttAgeS", -1, h.rttAgeS);
 		assertEquals("sentUnits", 0, h.sentUnits);
 		assertEquals("resentUnits", 0, h.resentUnits);
-		assertEquals("heapUsedMb", -1, h.heapUsedMb);
-		assertEquals("procCpuPct", -1, h.procCpuPct);
-		assertEquals("sysCpuPct", -1, h.sysCpuPct);
 		assertEquals("conn", NoData.NONE, h.conn);
 	}
 
@@ -499,55 +469,17 @@ public class SecondRingTest
 		assertEquals(total - 1, ring.head());
 	}
 
-	/** T15: the three rings and the three usuals of a {@link Session} are under 400 KB, in final arrays. */
+	/** T15: the two rings and the three usuals of a {@link Session} are under 400 KB, in final arrays. */
 	@Test
 	public void sizes() throws Exception
 	{
 		final Session s = new Session(0, 0, Os.WINDOWS, ZoneOffset.UTC);
-		final long rings = arrayBytes(s.seconds) + arrayBytes(s.ticks) + arrayBytes(s.gcs);
+		final long rings = arrayBytes(s.seconds) + arrayBytes(s.ticks);
 		final long usuals = arrayBytes(s.rttUsual) + arrayBytes(s.rttSession) + arrayBytes(s.fpsUsual);
 		assertTrue("rings are " + rings + " bytes", rings > 200_000);
 		assertTrue("rings and usuals are " + (rings + usuals) + " bytes, over 400 KB", rings + usuals < 400_000);
 		assertEquals("seconds + 1 slots", Thresholds.SECONDS + 1, arrayLength(s.seconds, "frames"));
 		assertEquals("ticks + 1 slots", Thresholds.TICKS + 1, arrayLength(s.ticks, "atMs"));
-		assertEquals("pauses + 1 slots", Thresholds.GC_PAUSES + 1, arrayLength(s.gcs, "startMs"));
-	}
-
-	/** No method allocates: a million puts and a full read of each second, after a warm-up, allocate 0 bytes. */
-	@Test
-	public void putAllocatesNothing()
-	{
-		final com.sun.management.ThreadMXBean bean = allocationBean();
-		Assume.assumeTrue("this JVM does not count allocated bytes", bean != null);
-		final SecondRing ring = new SecondRing(Thresholds.SECONDS + 1);
-		final FrameSecond f = new FrameSecond();
-		final HostSecond h = new HostSecond();
-		long sec = 0;
-		long sink = 0;
-		for (int i = 0; i < 100_000; i++)
-		{
-			f.frames = i & 63;
-			h.conn = CONN[i % CONN.length];
-			ring.putFrame(sec, f);
-			ring.putHost(sec, h);
-			sink += readSum(ring, sec);
-			sec++;
-		}
-		final long thread = Thread.currentThread().getId();
-		bean.getThreadAllocatedBytes(thread);
-		final long before = bean.getThreadAllocatedBytes(thread);
-		for (int i = 0; i < 1_000_000; i++)
-		{
-			f.frames = i & 63;
-			h.conn = CONN[i % CONN.length];
-			ring.putFrame(sec, f);
-			ring.putHost(sec, h);
-			sink += readSum(ring, sec);
-			sec++;
-		}
-		final long after = bean.getThreadAllocatedBytes(thread);
-		assertTrue(sink != 42);
-		assertEquals("bytes allocated by a million puts and reads", 0, after - before);
 	}
 
 	// ---------------------------------------------------------------- helpers
@@ -560,50 +492,34 @@ public class SecondRingTest
 		f.worstFrameMs = v[1];
 		f.worstFrameEndMs = v[2];
 		f.slowFrames = v[3];
-		f.busyPm = v[4];
-		f.worstBusyPm = v[5];
-		f.loadingMs = v[6];
-		f.state = v[7];
-		f.flags = v[8];
-		f.world = v[9];
-		f.players = v[10];
-		f.npcs = v[11];
-		f.region = v[12];
-		h.rttMs = v[13];
-		h.rttAgeS = v[14];
-		h.sentUnits = v[15];
-		h.resentUnits = v[16];
-		h.heapUsedMb = v[17];
-		h.procCpuPct = v[18];
-		h.sysCpuPct = v[19];
-		h.conn = CONN[v[20]];
+		f.loadingMs = v[4];
+		f.state = v[5];
+		f.flags = v[6];
+		f.world = v[7];
+		f.players = v[8];
+		f.npcs = v[9];
+		f.region = v[10];
+		h.rttMs = v[11];
+		h.rttAgeS = v[12];
+		h.sentUnits = v[13];
+		h.resentUnits = v[14];
+		h.conn = CONN[v[15]];
 	}
 
 	private static int[] expected(long sec)
 	{
 		final int s = (int) sec;
 		return new int[] {
-			s % 1000, s % 30_000, s % 1000, s % 128, s % 1001, (s + 7) % 1001, s % 997, s % 7, s % 128, s % 600,
-			s % 2000, s % 3000, s % 65_536, s % 2000, s % 100, s, s ^ 0x5555, s % 4000, s % 800, s % 101,
-			s % CONN.length};
+			s % 1000, s % 30_000, s % 1000, s % 128, s % 997, s % 7, s % 128, s % 600, s % 2000, s % 3000,
+			s % 65_536, s % 2000, s % 100, s, s ^ 0x5555, s % CONN.length};
 	}
 
 	private static int[] readAll(SecondRing r, long sec)
 	{
 		return new int[] {
-			r.frames(sec), r.worstFrameMs(sec), r.worstFrameEndMs(sec), r.slowFrames(sec), r.busyPm(sec),
-			r.worstBusyPm(sec), r.loadingMs(sec), r.state(sec), r.flags(sec), r.world(sec), r.players(sec),
-			r.npcs(sec), r.region(sec), r.rttMs(sec), r.rttAgeS(sec), r.sentUnits(sec), r.resentUnits(sec),
-			r.heapUsedMb(sec), r.procCpuPct(sec), r.sysCpuPct(sec), r.conn(sec).ordinal()};
-	}
-
-	private static long readSum(SecondRing r, long sec)
-	{
-		return (r.valid(sec) ? 1 : 0) + r.frames(sec) + r.worstFrameMs(sec) + r.worstFrameEndMs(sec)
-			+ r.slowFrames(sec) + r.busyPm(sec) + r.worstBusyPm(sec) + r.loadingMs(sec) + r.state(sec) + r.flags(sec)
-			+ r.world(sec) + r.players(sec) + r.npcs(sec) + r.region(sec) + r.rttMs(sec) + r.rttAgeS(sec)
-			+ r.sentUnits(sec) + r.resentUnits(sec) + r.heapUsedMb(sec) + r.procCpuPct(sec) + r.sysCpuPct(sec)
-			+ r.conn(sec).ordinal() + r.head() + r.tail();
+			r.frames(sec), r.worstFrameMs(sec), r.worstFrameEndMs(sec), r.slowFrames(sec), r.loadingMs(sec),
+			r.state(sec), r.flags(sec), r.world(sec), r.players(sec), r.npcs(sec), r.region(sec), r.rttMs(sec),
+			r.rttAgeS(sec), r.sentUnits(sec), r.resentUnits(sec), r.conn(sec).ordinal()};
 	}
 
 	private static void assertConsistent(SecondRing ring, long sec)
@@ -672,25 +588,5 @@ public class SecondRingTest
 			return 4;
 		}
 		return 8;
-	}
-
-	/** The allocation counter of this JVM, or null when it has none (test code only). */
-	static com.sun.management.ThreadMXBean allocationBean()
-	{
-		final java.lang.management.ThreadMXBean bean = ManagementFactory.getThreadMXBean();
-		if (!(bean instanceof com.sun.management.ThreadMXBean))
-		{
-			return null;
-		}
-		final com.sun.management.ThreadMXBean sun = (com.sun.management.ThreadMXBean) bean;
-		if (!sun.isThreadAllocatedMemorySupported())
-		{
-			return null;
-		}
-		if (!sun.isThreadAllocatedMemoryEnabled())
-		{
-			sun.setThreadAllocatedMemoryEnabled(true);
-		}
-		return sun;
 	}
 }

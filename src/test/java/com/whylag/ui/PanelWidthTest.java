@@ -19,7 +19,7 @@ import static org.junit.Assert.assertTrue;
  * (both rows folded, both open), in developer mode so the footer is there too. For each block: its preferred width
  * is exactly 213; every string it draws measures no wider than its box with the real font; and nothing is painted
  * at x 213 or more - painted with no clip into a 260 px image, the columns 213 .. 259 stay untouched. Then the four
- * named corners: the widest counts row, the five cells ending at x 213, the range row ending at x 213, and the
+ * named corners: the widest counts row, the three cells ending at x 213, the range row ending at x 213, and the
  * widest fold row.
  */
 public class PanelWidthTest
@@ -43,7 +43,8 @@ public class PanelWidthTest
 			if (drawn.size() > 1)
 			{
 				final Drawn world = drawn.get(1);
-				assertEquals(where + ": the world words end at x 213", 213, world.right());
+				assertEquals(where + ": the world words end 6 px left of the gear, at x 195", 213 - 12 - 6,
+					world.right());
 				assertTrue(where + ": clear of the title", world.x > title.right());
 			}
 		});
@@ -73,7 +74,7 @@ public class PanelWidthTest
 	{
 		eachBlock(WhyLagPanel::cells, (where, drawn) ->
 		{
-			assertTrue(where, drawn.size() >= 10);
+			assertTrue(where, drawn.size() >= 6);
 			for (Drawn d : drawn)
 			{
 				final int cell = CellStrip.cellAt(d.x);
@@ -135,7 +136,7 @@ public class PanelWidthTest
 				}
 			}
 			// Each lane's values stay clear of its label.
-			for (int lane = 0; lane < 5; lane++)
+			for (int lane = 0; lane < 3; lane++)
 			{
 				final int y = 30 * lane + 11;
 				Drawn label = null;
@@ -207,16 +208,6 @@ public class PanelWidthTest
 	}
 
 	@Test
-	public void buttonRow()
-	{
-		eachBlock(WhyLagPanel::buttons, (where, drawn) ->
-		{
-			assertEquals(where, 1, drawn.size());
-			inBox(where + ": inside the button", drawn.get(0), 1, 212);
-		});
-	}
-
-	@Test
 	public void footer()
 	{
 		eachBlock(WhyLagPanel::footer, (where, drawn) ->
@@ -255,13 +246,13 @@ public class PanelWidthTest
 		}
 	}
 
-	/** "Conn 99+" .. "? 99+": five items that need two lines, each whole and inside 213 px. */
+	/** "Conn 99+" .. "? 99+": four items that need two lines, each whole and inside 213 px. */
 	@Test
 	public void fullSessionCountsRowFits()
 	{
 		final WhyLagPanel p = devPanel(PanelFixtures.countsOver99(), false);
 		final List<Drawn> drawn = record(p.counts());
-		assertEquals(5, drawn.size());
+		assertEquals(4, drawn.size());
 		final List<String> words = new ArrayList<>();
 		for (Drawn d : drawn)
 		{
@@ -269,30 +260,30 @@ public class PanelWidthTest
 			inBox("99+", d, 0, 213);
 		}
 		assertEquals(p.counts().items(), words);
-		assertEquals("? 99+", words.get(4));
+		assertEquals("? 99+", words.get(3));
 		assertEquals(32, p.counts().getHeight());
-		assertTrue("measured: all five on one line would be 274 px", Ui.width(Ui.RSS, String.join("", words))
-			+ 4 * 11 > 213);
+		assertTrue("measured: all four on one line would be over 213 px", Ui.width(Ui.RSS, String.join("", words))
+			+ 3 * 11 > 213);
 	}
 
 	@Test
-	public void theFiveCellsEndAtTwoHundredThirteen()
+	public void theThreeCellsEndAtTwoHundredThirteen()
 	{
-		assertEquals(5, CellStrip.X.length);
-		final int[] xs = {0, 43, 86, 129, 172};
-		final int[] ws = {40, 40, 40, 40, 41};
-		for (int i = 0; i < 5; i++)
+		assertEquals(3, CellStrip.X.length);
+		final int[] xs = {0, 72, 144};
+		final int[] ws = {69, 69, 69};
+		for (int i = 0; i < 3; i++)
 		{
 			assertEquals(xs[i], CellStrip.X[i]);
 			assertEquals(ws[i], CellStrip.W[i]);
 		}
-		assertEquals(213, CellStrip.X[4] + CellStrip.W[4]);
+		assertEquals(213, CellStrip.X[2] + CellStrip.W[2]);
 		final BufferedImage img = PanelFixtures.paint(PanelFixtures.panel(PanelFixtures.quiet(), false).cells());
-		for (int i = 0; i < 5; i++)
+		for (int i = 0; i < 3; i++)
 		{
 			assertTrue("cell " + i + " starts at " + xs[i], is(img, xs[i], 45, Ui.CARD));
 			assertTrue("cell " + i + " ends at " + (xs[i] + ws[i] - 1), is(img, xs[i] + ws[i] - 1, 45, Ui.CARD));
-			if (i < 4)
+			if (i < 2)
 			{
 				for (int gap = xs[i] + ws[i]; gap < xs[i + 1]; gap++)
 				{

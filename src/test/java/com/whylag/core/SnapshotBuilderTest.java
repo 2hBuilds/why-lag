@@ -13,14 +13,13 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
- * What the panel reads (contract 3.8, 5.2, 5.3; lot L5), built from {@link Trace}s: the four tiles of a steady
- * trace and of every no-data state; the memory tile on its two sources, with an unknown heap limit, and read at the
- * newest second's end; the Server ticks tile's trimmed mean, raw deviation and corrected level; the frame rate tile
- * and columns judged by the cap in force for their own second's focus; the five strips and their time map (the range
- * ends at the end of the newest second, empty columns before the session and the login, a late tick as wide as its
- * gap, no tick after the range's end, the worst of each slice); the memory lane on heap AFTER collection; the CPU
- * lane's two series and its level; the value at the right of each lane; the world and the CPU of now; the range's
- * events, the session's events and the counts that outlive the log's cap; and the snapshot's cost (T16's part).
+ * What the panel reads (contract 3.8, 5.2, 5.3; lot L5), built from {@link Trace}s: the three tiles of a steady
+ * trace and of every no-data state; the Server ticks tile's trimmed mean, raw deviation and corrected level; the
+ * frame rate tile and columns judged by the cap in force for their own second's focus; the three strips and their
+ * time map (the range ends at the end of the newest second, empty columns before the session and the login, a late
+ * tick as wide as its gap, no tick after the range's end, the worst of each slice); the value at the right of each
+ * lane; the world of now; the range's events, the session's events and the counts that outlive the log's cap; and
+ * the snapshot's cost (T16's part).
  */
 public class SnapshotBuilderTest
 {
@@ -40,14 +39,12 @@ public class SnapshotBuilderTest
 	private static final int FPS = Lane.FRAME_RATE.ordinal();
 	private static final int TICKS = Lane.TICKS.ordinal();
 	private static final int PING = Lane.PING.ordinal();
-	private static final int MEMORY = Lane.MEMORY.ordinal();
-	private static final int CPU = Lane.CPU.ordinal();
 	/** T16's generous bound on CI, in ms (contract 4). */
 	private static final long T16_BOUND_MS = 20;
 
 	// ---------------------------------------------------------------- the tiles
 
-	/** The picture's quiet numbers: 50 fps, 600 ms, 40 ms, 52 %, the memory small line "pause 0 ms". */
+	/** The picture's quiet numbers: 50 fps, 600 ms, 40 ms. */
 	@Test
 	public void tilesOfASteadyTrace()
 	{
@@ -56,7 +53,6 @@ public class SnapshotBuilderTest
 		assertTile(p.tiles[FPS], Lane.FRAME_RATE, Level.OK, "50 fps", "worst 22 ms", NoData.NONE);
 		assertTile(p.tiles[TICKS], Lane.TICKS, Level.OK, "600 ms", PLUS_MINUS + "0 ms", NoData.NONE);
 		assertTile(p.tiles[PING], Lane.PING, Level.OK, "40 ms", "", NoData.NONE);
-		assertTile(p.tiles[MEMORY], Lane.MEMORY, Level.OK, "52 %", "pause 0 ms", NoData.NONE);
 
 		// The ping tile's small line is this world's usual, once there is one.
 		assertTile(snapshot(Trace.steady(100).usual(39), 100, 1).tiles[PING], Lane.PING, Level.OK, "40 ms",
@@ -72,76 +68,6 @@ public class SnapshotBuilderTest
 				assertEquals(minutes + " min", p.tiles[i].sub, q.tiles[i].sub);
 				assertEquals(minutes + " min", p.tiles[i].level, q.tiles[i].level);
 			}
-		}
-	}
-
-	/** On the RUNTIME source pauses cannot be known: "pause n/a", and the level leaves the pause out. */
-	@Test
-	public void memorySubIsNaOnTheFallback()
-	{
-		final PanelSnapshot runtime = snapshot(Trace.steady(100).gcPause(80, 0, 400, 300).settings(runtime()), 100, 1);
-		assertTile(runtime.tiles[MEMORY], Lane.MEMORY, Level.OK, "52 %", "pause n/a", NoData.NONE);
-
-		// The same ring read from the management source knows the 400 ms pause: "pause 400 ms", BAD.
-		final PanelSnapshot management = snapshot(Trace.steady(100).gcPause(80, 0, 400, 300), 100, 1);
-		assertTile(management.tiles[MEMORY], Lane.MEMORY, Level.BAD, "52 %", "pause 400 ms", NoData.NONE);
-
-		// Measured and none is "pause 0 ms", a different fact from "pause n/a".
-		assertEquals("pause 0 ms", snapshot(Trace.steady(100), 100, 1).tiles[MEMORY].sub);
-		assertEquals("pause n/a", snapshot(Trace.steady(100).settings(runtime()), 100, 1).tiles[MEMORY].sub);
-	}
-
-	/** While logged in, with a known heap limit, the memory tile always has a number; not logged in, all four dash. */
-	@Test
-	public void memoryTileIsNeverNoData()
-	{
-		assertMemoryHasANumber("steady", Trace.steady(100), 100);
-		assertMemoryHasANumber("warming up", Trace.steady(200).loginAt(30), 50);
-		assertMemoryHasANumber("frames stopped", Trace.steady(100), 103);
-		assertMemoryHasANumber("no ticks", Trace.steady(100).noTicks(40, 99), 100);
-		assertMemoryHasANumber("a stale ping", Trace.steady(100).rttStale(90, 99), 100);
-		assertMemoryHasANumber("the fallback source", Trace.steady(100).settings(runtime()), 100);
-		assertMemoryHasANumber("no collection yet", Trace.steady(100).noBaselineCollection(), 100);
-		assertMemoryHasANumber("after a hop", Trace.steady(200).hop(100, 302), 150);
-		assertMemoryHasANumber("a load in the newest second", Trace.steady(100).loading(99, 600), 100);
-		assertMemoryHasANumber("after a lost connection", Trace.steady(100).disconnect(90), 100);
-		assertMemoryHasANumber("a long freeze", Trace.steady(100).frameGap(98, 500, 1800), 100);
-		assertMemoryHasANumber("a Runtime-only PC",
-			Trace.steady(100).cpuUnknown().busyUnknown().settings(runtime()), 100);
-		assertMemoryHasANumber("a pause of 400 ms", Trace.steady(100).gcPause(95, 0, 400, 700), 100);
-
-		final PanelSnapshot out = snapshot(Trace.steady(100).loginAt(50), 40, 1);
-		for (int i = 0; i < Lane.TILES; i++)
-		{
-			assertDash(out.tiles[i], Lane.values()[i], NoData.NOT_LOGGED_IN);
-			assertEquals("Not logged in", out.tiles[i].sub);
-		}
-	}
-
-	/** A heap limit of 0 or less is unknown (contract 3.7): no memory %, an empty lane with a 0 .. 0 scale. */
-	@Test
-	public void anUnknownHeapLimitIsNoMemoryPercent()
-	{
-		for (int limit : new int[] {0, -1})
-		{
-			final SettingsView unknown = settings(Renderer.CPU, limit, MemorySource.MANAGEMENT);
-			final PanelSnapshot p = snapshot(Trace.steady(100).gcPause(80, 0, 150, 400).settings(unknown), 100, 10);
-			assertDash(p.tiles[MEMORY], Lane.MEMORY, NoData.ERROR);
-			assertEquals("Could not read it", p.tiles[MEMORY].sub);
-			final Strip memory = p.strips[MEMORY];
-			for (int c = 0; c < COLUMNS; c++)
-			{
-				assertEquals("column " + c, NONE, memory.values[c]);
-				assertEquals("column " + c, NO_DATA, memory.levels[c]);
-			}
-			assertEquals(0, memory.min);
-			assertEquals(0, memory.max);
-			assertEquals("", memory.now);
-			assertEquals(Level.NO_DATA, memory.nowLevel);
-			// Nothing else is touched.
-			assertEquals("50 fps", p.tiles[FPS].value);
-			assertEquals(50, p.strips[FPS].values[LAST_COLUMN]);
-			assertEquals(unknown, p.settings);
 		}
 	}
 
@@ -193,7 +119,6 @@ public class SnapshotBuilderTest
 		assertEquals("No frames drawn", stopped.tiles[FPS].sub);
 		assertEquals("600 ms", stopped.tiles[TICKS].value);
 		assertEquals("40 ms", stopped.tiles[PING].value);
-		assertEquals("52 %", stopped.tiles[MEMORY].value);
 
 		// No ticks yet: none arrived in the window, or every one of them is masked just after a login.
 		assertDash(snapshot(Trace.steady(100).noTicks(40, 99), 100, 1).tiles[TICKS], Lane.TICKS, NoData.NO_TICKS);
@@ -214,12 +139,6 @@ public class SnapshotBuilderTest
 		final Tile stale = snapshot(Trace.steady(100).rttStale(90, 99), 100, 1).tiles[PING];
 		assertDash(stale, Lane.PING, NoData.STALE);
 		assertEquals("Nothing sent", stale.sub);
-
-		// Memory: the heap limit is unknown.
-		final Tile memory = snapshot(Trace.steady(100).settings(settings(Renderer.CPU, 0, MemorySource.MANAGEMENT)),
-			100, 1).tiles[MEMORY];
-		assertDash(memory, Lane.MEMORY, NoData.ERROR);
-		assertEquals("Could not read it", memory.sub);
 	}
 
 	/** At a cap the player set, a frame rate held at it is OK; the client's own 50 is no such cap. */
@@ -227,7 +146,7 @@ public class SnapshotBuilderTest
 	public void cappedFpsTileIsOk()
 	{
 		final SettingsView fpsControl30 = new SettingsView(Renderer.CPU, true, true, 30, false, 0, false, "", 0, 0, "",
-			0, 60, 768, MemorySource.MANAGEMENT, Os.WINDOWS, "");
+			0, 60, Os.WINDOWS, "");
 		assertEquals("precondition: FPS Control caps at 30", CapSource.FPS_CONTROL, fpsControl30.capSource(true));
 
 		final PanelSnapshot capped = snapshot(Trace.steady(100).fps(0, 99, 30).settings(fpsControl30), 100, 1);
@@ -248,7 +167,7 @@ public class SnapshotBuilderTest
 
 		// A GPU target the player set counts the same.
 		final SettingsView gpuTarget30 = new SettingsView(Renderer.GPU, false, false, 0, false, 0, true, "OFF", 30, 50,
-			"MSAA_2", 0, 60, 768, MemorySource.MANAGEMENT, Os.WINDOWS, "");
+			"MSAA_2", 0, 60, Os.WINDOWS, "");
 		assertEquals(Level.OK, snapshot(Trace.steady(100).fps(0, 99, 30).settings(gpuTarget30), 100, 1)
 			.tiles[FPS].level);
 	}
@@ -355,69 +274,8 @@ public class SnapshotBuilderTest
 			Level.WARN, "600 ms", PLUS_MINUS + warnRaw + " ms", NoData.NONE);
 	}
 
-	/** The level is the worse of heap AFTER collection and the pause; used heap near the top is no sign of trouble. */
-	@Test
-	public void memoryLevelUsesHeapAfterCollection()
-	{
-		// 740 of 768 MB used, 96 %, but 300 after the last collection: OK.
-		assertTile(snapshot(Trace.steady(100).heap(0, 99, 740), 100, 1).tiles[MEMORY], Lane.MEMORY, Level.OK,
-			"96 %", "pause 0 ms", NoData.NONE);
-		// 720 after collection is 93 % of the limit: BAD, with 52 % used.
-		assertTile(snapshot(Trace.steady(100).gcInferred(90, 720), 100, 1).tiles[MEMORY], Lane.MEMORY, Level.BAD,
-			"52 %", "pause 0 ms", NoData.NONE);
-		// 653 is 85 %: WARN; 652 is 84 %: OK.
-		assertEquals(Level.WARN, snapshot(Trace.steady(100).gcInferred(90, 653), 100, 1).tiles[MEMORY].level);
-		assertEquals(Level.OK, snapshot(Trace.steady(100).gcInferred(90, 652), 100, 1).tiles[MEMORY].level);
-
-		// The lane's columns take the same lines: 300 is OK up to the collection at second 90, 720 BAD from it on.
-		final PanelSnapshot bad = snapshot(Trace.steady(100).gcInferred(90, 720), 100, 1);
-		for (int c = 0; c < COLUMNS; c++)
-		{
-			final boolean after = columnStartMs(bad, c + 1) - 1 >= 90_000;
-			assertEquals("column " + c, after ? 720 : 300, bad.strips[MEMORY].values[c]);
-			assertEquals("column " + c, after ? BAD : OK, bad.strips[MEMORY].levels[c]);
-		}
-		final Strip warn = snapshot(Trace.steady(100).gcInferred(95, 653), 100, 1).strips[MEMORY];
-		assertEquals(WARN, warn.levels[LAST_COLUMN]);
-		assertEquals(OK, warn.levels[0]);
-	}
-
-	/** A collection and a pause after the newest second are not seen, not even one at the next second's first ms. */
-	@Test
-	public void memoryTileReadsEndWithTheNewestSecond()
-	{
-		// The checked case of 3.3 on its own: "pause 0 ms" and a heap after of 300.
-		final PanelSnapshot checked = snapshot(Trace.steady(100).gcPause(80, 0, 150, 400), 80, 1);
-		assertEquals("pause 0 ms", checked.tiles[MEMORY].sub);
-		assertEquals(300, checked.strips[MEMORY].values[LAST_COLUMN]);
-		assertEquals("39 %", checked.strips[MEMORY].now);
-
-		final Trace t = Trace.steady(100).gcPause(80, 0, 150, 400).gcInferred(90, 700);
-		final Session s = t.build();
-		assertEquals("precondition: the last row written looks past every second", 700, s.gcs.lastHeapAfterMb());
-
-		// Newest second 79: the pause starts at 80,000, the first ms of second 80.
-		final PanelSnapshot at80 = build(s, t.settings(), 80, 1);
-		assertTile(at80.tiles[MEMORY], Lane.MEMORY, Level.OK, "52 %", "pause 0 ms", NoData.NONE);
-		assertEquals("heap after the baseline collection, 300", "39 %", at80.strips[MEMORY].now);
-		assertEquals(300, at80.strips[MEMORY].values[LAST_COLUMN]);
-
-		// Newest second 80: the pause and its heap after, 400, are seen.
-		final PanelSnapshot at81 = build(s, t.settings(), 81, 1);
-		assertTile(at81.tiles[MEMORY], Lane.MEMORY, Level.WARN, "52 %", "pause 150 ms", NoData.NONE);
-		assertEquals("52 %", at81.strips[MEMORY].now);
-		assertEquals(400, at81.strips[MEMORY].values[LAST_COLUMN]);
-
-		// The collection at second 90 is not seen at newest second 84, and seen at 90.
-		assertEquals("52 %", build(s, t.settings(), 85, 1).strips[MEMORY].now);
-		final PanelSnapshot at91 = build(s, t.settings(), 91, 1);
-		assertEquals("91 %", at91.strips[MEMORY].now);
-		assertEquals(Level.WARN, at91.strips[MEMORY].nowLevel);
-		assertEquals(Level.WARN, at91.tiles[MEMORY].level);
-	}
-
 	/**
-	 * The four tiles show their numbers from the login, past the login's masked ticks. (There is no warm-up since the
+	 * The three tiles show their numbers from the login, past the login's masked ticks. (There is no warm-up since the
 	 * first live look, WARMUP_S 0; the tiles never read it.)
 	 */
 	@Test
@@ -431,7 +289,6 @@ public class SnapshotBuilderTest
 		assertTile(p.tiles[FPS], Lane.FRAME_RATE, Level.OK, "50 fps", "worst 22 ms", NoData.NONE);
 		assertTile(p.tiles[TICKS], Lane.TICKS, Level.OK, "600 ms", PLUS_MINUS + "0 ms", NoData.NONE);
 		assertTile(p.tiles[PING], Lane.PING, Level.OK, "40 ms", "", NoData.NONE);
-		assertTile(p.tiles[MEMORY], Lane.MEMORY, Level.OK, "52 %", "pause 0 ms", NoData.NONE);
 		for (Tile tile : p.tiles)
 		{
 			assertNotEquals(NoData.WARMING_UP, tile.noData);
@@ -443,7 +300,7 @@ public class SnapshotBuilderTest
 	// ---------------------------------------------------------------- the strips
 
 	@Test
-	public void stripsAreFiveInLaneOrder()
+	public void stripsAreThreeInLaneOrder()
 	{
 		final PanelSnapshot p = snapshot(Trace.steady(100), 100, 1);
 		assertEquals(Lane.values().length, p.strips.length);
@@ -453,114 +310,11 @@ public class SnapshotBuilderTest
 			assertEquals(Lane.values()[i], s.lane);
 			assertEquals(COLUMNS, s.values.length);
 			assertEquals(COLUMNS, s.levels.length);
-			if (s.lane == Lane.CPU)
-			{
-				assertEquals(COLUMNS, s.values2.length);
-			}
-			else
-			{
-				assertNull(s.lane + " has no second series", s.values2);
-				assertEquals("", s.now2);
-			}
 		}
 		for (int i = 0; i < Lane.TILES; i++)
 		{
 			assertEquals(Lane.values()[i], p.tiles[i].lane);
 		}
-	}
-
-	/** A steady trace: the PC line 20 in every column, the game line 40, "PC 20 %" and "Game 40 %", scale 0..100. */
-	@Test
-	public void cpuLaneIsWholePcWithAGameLine()
-	{
-		final Trace t = Trace.steady(3600);
-		final Session s = t.build();
-		for (int minutes : new int[] {1, 10, 60})
-		{
-			final PanelSnapshot p = build(s, t.settings(), 3600, minutes);
-			final Strip cpu = p.strips[CPU];
-			assertEquals(Lane.CPU, cpu.lane);
-			assertNotNull(cpu.values2);
-			for (int c = 0; c < COLUMNS; c++)
-			{
-				assertEquals(minutes + " min, column " + c, 20, cpu.values[c]);
-				assertEquals(minutes + " min, column " + c, 40, cpu.values2[c]);
-				assertEquals(minutes + " min, column " + c, OK, cpu.levels[c]);
-			}
-			assertEquals("PC 20 %", cpu.now);
-			assertEquals(Level.OK, cpu.nowLevel);
-			assertEquals("Game 40 %", cpu.now2);
-			assertEquals(0, cpu.min);
-			assertEquals(100, cpu.max);
-			assertEquals(20, p.sysCpuPct);
-			assertEquals(40, p.gameBusyPct);
-		}
-	}
-
-	/** Each series takes the HIGHEST of its slice, on its own: the PC's and the game's may come from other seconds. */
-	@Test
-	public void cpuLaneHoldsTheHighestOfEachSlice()
-	{
-		final PanelSnapshot p = snapshot(Trace.steady(600).cpu(299, 299, 90, 30).cpu(300, 300, 50, 95), 600, 10);
-		final Strip cpu = p.strips[CPU];
-		final int c = firstColumnOf(p, 299);
-		assertEquals("precondition: seconds 299 and 300 share a column at 10 min", c, lastColumnOf(p, 300));
-		assertEquals("the highest PC, of second 299", 90, cpu.values[c]);
-		assertEquals("the highest game share, of second 300", 95, cpu.values2[c]);
-		assertEquals("PC 90 %", WARN, cpu.levels[c]);
-		for (int k = 0; k < COLUMNS; k++)
-		{
-			if (k != c)
-			{
-				assertEquals("column " + k, 20, cpu.values[k]);
-				assertEquals("column " + k, 40, cpu.values2[k]);
-			}
-		}
-	}
-
-	/** A Runtime-only PC: both series empty in every column (the game series an array, not null), no values. */
-	@Test
-	public void cpuLaneIsEmptyWithoutCpuData()
-	{
-		final Trace t = Trace.steady(100).cpuUnknown().busyUnknown().settings(runtime());
-		for (int minutes : new int[] {1, 10})
-		{
-			final PanelSnapshot p = snapshot(t, 100, minutes);
-			final Strip cpu = p.strips[CPU];
-			assertNotNull("the game series is an array, not null", cpu.values2);
-			for (int c = 0; c < COLUMNS; c++)
-			{
-				assertEquals(NONE, cpu.values[c]);
-				assertEquals(NONE, cpu.values2[c]);
-				assertEquals(NO_DATA, cpu.levels[c]);
-			}
-			assertEquals("", cpu.now);
-			assertEquals("", cpu.now2);
-			assertEquals(Level.NO_DATA, cpu.nowLevel);
-			assertEquals(-1, p.sysCpuPct);
-			assertEquals(-1, p.gameBusyPct);
-			assertEquals("logged in: the frame rate lane is drawn", 50, p.strips[FPS].values[LAST_COLUMN]);
-			assertEquals(416, p.world);
-		}
-	}
-
-	/** The CPU lane's level is the whole PC's: PC 96 with game 10 is BAD, PC 20 with game 100 is OK. */
-	@Test
-	public void cpuLevelFollowsThePc()
-	{
-		final Strip busyPc = snapshot(Trace.steady(100).cpu(0, 99, 96, 10), 100, 1).strips[CPU];
-		assertEveryLevel(busyPc, BAD);
-		assertEquals(Level.BAD, busyPc.nowLevel);
-		assertEquals("PC 96 %", busyPc.now);
-		assertEquals("Game 10 %", busyPc.now2);
-
-		final Strip busyGame = snapshot(Trace.steady(100).cpu(0, 99, 20, 100), 100, 1).strips[CPU];
-		assertEveryLevel(busyGame, OK);
-		assertEquals(Level.OK, busyGame.nowLevel);
-		assertEquals("Game 100 %", busyGame.now2);
-
-		assertEveryLevel(snapshot(Trace.steady(100).cpu(0, 99, 85, 10), 100, 1).strips[CPU], WARN);
-		assertEveryLevel(snapshot(Trace.steady(100).cpu(0, 99, 84, 10), 100, 1).strips[CPU], OK);
 	}
 
 	/** A 3 s dip at 60 min: one column of 16.9 s holds it, and it keeps the lowest rate and the highest RTT. */
@@ -634,15 +388,12 @@ public class SnapshotBuilderTest
 				assertEquals(minutes + " min, column " + c + " (the last tick is at 119,400)",
 					columnStartMs(p, c) > 119_400 ? NONE : 600, p.strips[TICKS].values[c]);
 				assertEquals(minutes + " min, column " + c, 40, p.strips[PING].values[c]);
-				assertEquals(minutes + " min, column " + c, 300, p.strips[MEMORY].values[c]);
-				assertEquals(minutes + " min, column " + c, 20, p.strips[CPU].values[c]);
-				assertEquals(minutes + " min, column " + c, 40, p.strips[CPU].values2[c]);
 			}
 		}
 	}
 
 	/**
-	 * At 60 min, every column before a login at second 600 is empty in all five lanes. The login's masked seconds
+	 * At 60 min, every column before a login at second 600 is empty in all three lanes. The login's masked seconds
 	 * (600 .. 608, its first LOGIN_MASK_TICKS ticks) are not drawn in the frame rate lane either: a column with no
 	 * unmasked second is a gap there (changes after the first live look).
 	 */
@@ -663,7 +414,6 @@ public class SnapshotBuilderTest
 			{
 				assertEquals("column " + c, columnStartMs(p, c + 1) <= maskEndMs ? NONE : 50,
 					p.strips[FPS].values[c]);
-				assertEquals("column " + c, 300, p.strips[MEMORY].values[c]);
 			}
 		}
 		assertTrue("precondition: some columns lie before the login", before > 30);
@@ -771,7 +521,7 @@ public class SnapshotBuilderTest
 	}
 
 	/**
-	 * A column with no counting second is empty in all five lanes, the ticks lane included: an unmasked tick whose gap
+	 * A column with no counting second is empty in all three lanes, the ticks lane included: an unmasked tick whose gap
 	 * reaches back over the login screen draws nothing there. No sampler writes such a tick (the first after a login
 	 * is masked), so this session is written by hand.
 	 */
@@ -787,8 +537,6 @@ public class SnapshotBuilderTest
 			f.frames = 50;
 			f.worstFrameMs = 22;
 			f.worstFrameEndMs = 500;
-			f.busyPm = 400;
-			f.worstBusyPm = 300;
 			f.state = in ? State.LOGGED_IN : State.LOGIN_SCREEN;
 			f.flags = Flags.FOCUSED | (in ? 0 : Flags.NOT_LOGGED_IN);
 			f.world = 416;
@@ -797,9 +545,6 @@ public class SnapshotBuilderTest
 			h.rttAgeS = in ? 0 : -1;
 			h.conn = in ? NoData.NONE : NoData.NOT_LOGGED_IN;
 			h.sentUnits = 900;
-			h.heapUsedMb = 400;
-			h.procCpuPct = 40;
-			h.sysCpuPct = 20;
 			s.seconds.putHost(sec, h);
 		}
 		// Ticks from 52,000 on, 600 apart; the first reaches 5,000 ms back, into the login screen, with no mask.
@@ -818,7 +563,7 @@ public class SnapshotBuilderTest
 		}
 		s.loggedInSince(50);
 
-		final PanelSnapshot p = build(s, settings(Renderer.CPU, 768, MemorySource.MANAGEMENT), 100, 1);
+		final PanelSnapshot p = build(s, Trace.steady(1).settings(), 100, 1);
 		int empty = 0;
 		for (int c = 0; c < COLUMNS; c++)
 		{
@@ -836,67 +581,7 @@ public class SnapshotBuilderTest
 		assertTrue("precondition: the login screen fills columns", empty > 30);
 	}
 
-	/** The memory lane plots heap AFTER collection: used heap swinging 400 .. 700, 300 after each, reads 300 and OK. */
-	@Test
-	public void memoryLaneIsHeapAfterCollection()
-	{
-		final Trace t = Trace.steady(600);
-		for (int k = 0; k < 600; k++)
-		{
-			t.heap(k, k, 400 + (k % 16) * 20);
-			if (k % 16 == 0)
-			{
-				t.gcInferred(k, 300);
-			}
-		}
-		final PanelSnapshot p = snapshot(t, 600, 10);
-		final Strip memory = p.strips[MEMORY];
-		for (int c = 0; c < COLUMNS; c++)
-		{
-			assertEquals("column " + c, 300, memory.values[c]);
-			assertEquals("column " + c, OK, memory.levels[c]);
-		}
-		assertEquals(0, memory.min);
-		assertEquals(768, memory.max);
-		assertEquals("39 %", memory.now);
-		// Used heap stays on the tile: second 599 uses 400 + 7 x 20 = 540 of 768.
-		assertEquals("70 %", p.tiles[MEMORY].value);
-	}
-
-	/** Before the first collection the memory lane is empty; the other lanes are drawn there. */
-	@Test
-	public void memoryLaneIsEmptyBeforeTheFirstCollection()
-	{
-		final Trace t = Trace.steady(120).noBaselineCollection().gcInferred(60, 300);
-		final PanelSnapshot p = snapshot(t, 120, 10);
-		for (int c = 0; c < COLUMNS; c++)
-		{
-			final long lastMs = columnStartMs(p, c + 1) - 1;
-			if (lastMs < 0)
-			{
-				assertEmptyColumn(p, c);
-			}
-			else if (lastMs < 60_000)
-			{
-				assertEquals("column " + c, NONE, p.strips[MEMORY].values[c]);
-				assertEquals("column " + c, NO_DATA, p.strips[MEMORY].levels[c]);
-				assertEquals("column " + c, 50, p.strips[FPS].values[c]);
-			}
-			else
-			{
-				assertEquals("column " + c, 300, p.strips[MEMORY].values[c]);
-			}
-		}
-
-		// Newest second 59: no collection yet. The tile has its number, at the pause's level; the lane no value.
-		final PanelSnapshot early = snapshot(t, 60, 1);
-		assertTile(early.tiles[MEMORY], Lane.MEMORY, Level.OK, "52 %", "pause 0 ms", NoData.NONE);
-		assertEquals("", early.strips[MEMORY].now);
-		assertEquals(Level.NO_DATA, early.strips[MEMORY].nowLevel);
-		assertEveryValue(early.strips[MEMORY], NONE);
-	}
-
-	/** The scales of 5.3: fps, ticks and ping grow with their data and the cap; memory is the limit; CPU is fixed. */
+	/** The scales of 5.3: fps, ticks and ping grow with their data and the cap. */
 	@Test
 	public void scalesFollowTheirRules()
 	{
@@ -904,8 +589,6 @@ public class SnapshotBuilderTest
 		assertScale(steady.strips[FPS], 0, Thresholds.STRIP_FPS_MAX);
 		assertScale(steady.strips[TICKS], Thresholds.STRIP_TICK_MIN_MS, Thresholds.STRIP_TICK_MAX_MS);
 		assertScale(steady.strips[PING], 0, Thresholds.STRIP_PING_MAX_MS);
-		assertScale(steady.strips[MEMORY], 0, 768);
-		assertScale(steady.strips[CPU], 0, Thresholds.STRIP_CPU_MAX_PCT);
 
 		// fps: the highest column drawn, and the cap of the newest second's focus.
 		assertEquals(90, snapshot(Trace.steady(100).fps(95, 99, 90), 100, 1).strips[FPS].max);
@@ -926,7 +609,7 @@ public class SnapshotBuilderTest
 
 	// ---------------------------------------------------------------- the values of now
 
-	/** With no event selected the frame rate, ticks and ping lanes print their tiles' values, at their levels. */
+	/** With no event selected the three lanes print their tiles' values, at their levels. */
 	@Test
 	public void laneValuesAreTheTilesValues()
 	{
@@ -934,18 +617,11 @@ public class SnapshotBuilderTest
 		assertLaneValue(p.strips[FPS], "50 fps", Level.OK, p.tiles[FPS]);
 		assertLaneValue(p.strips[TICKS], "600 ms", Level.OK, p.tiles[TICKS]);
 		assertLaneValue(p.strips[PING], "40 ms", Level.OK, p.tiles[PING]);
-		assertEquals("heap after collection, 300 of 768", "39 %", p.strips[MEMORY].now);
-		assertEquals(Level.OK, p.strips[MEMORY].nowLevel);
-		assertEquals("PC 20 %", p.strips[CPU].now);
-		assertEquals("Game 40 %", p.strips[CPU].now2);
 
 		// The same when they are not OK.
-		final PanelSnapshot bad = snapshot(Trace.steady(100).fps(95, 99, 20).rtt(95, 99, 200).gcInferred(90, 660),
-			100, 1);
+		final PanelSnapshot bad = snapshot(Trace.steady(100).fps(95, 99, 20).rtt(95, 99, 200), 100, 1);
 		assertLaneValue(bad.strips[FPS], "20 fps", Level.BAD, bad.tiles[FPS]);
 		assertLaneValue(bad.strips[PING], "200 ms", Level.BAD, bad.tiles[PING]);
-		assertEquals("85 %", bad.strips[MEMORY].now);
-		assertEquals(Level.WARN, bad.strips[MEMORY].nowLevel);
 		final PanelSnapshot gap = snapshot(Trace.steady(100).noTicks(70, 71), 100, 1);
 		assertLaneValue(gap.strips[TICKS], "600 ms", Level.BAD, gap.tiles[TICKS]);
 	}
@@ -964,10 +640,7 @@ public class SnapshotBuilderTest
 			{
 				assertEquals(s.lane.label(), "", s.now);
 				assertEquals(s.lane.label(), Level.NO_DATA, s.nowLevel);
-				assertEquals(s.lane.label(), "", s.now2);
 			}
-			assertEquals(-1, p.sysCpuPct);
-			assertEquals(-1, p.gameBusyPct);
 			assertEquals(0, p.world);
 		}
 
@@ -975,11 +648,6 @@ public class SnapshotBuilderTest
 		assertEquals("", stale.strips[PING].now);
 		assertEquals(Level.NO_DATA, stale.strips[PING].nowLevel);
 		assertEquals("50 fps", stale.strips[FPS].now);
-
-		final PanelSnapshot noCollection = snapshot(Trace.steady(100).noBaselineCollection(), 100, 1);
-		assertEquals("", noCollection.strips[MEMORY].now);
-		assertEquals(Level.NO_DATA, noCollection.strips[MEMORY].nowLevel);
-		assertEquals("52 %", noCollection.tiles[MEMORY].value);
 
 		assertEquals("frames stopped", "", snapshot(Trace.steady(100), 103, 1).strips[FPS].now);
 		assertEquals("no ticks", "", snapshot(Trace.steady(100).noTicks(40, 99), 100, 1).strips[TICKS].now);
@@ -999,20 +667,6 @@ public class SnapshotBuilderTest
 		assertEquals(0, snapshot(Trace.steady(100), 0, 1).world);
 	}
 
-	/** The CPU of now is the newest second's: the PC's share and the game's through {@link Fmt#busyPct}. */
-	@Test
-	public void theCpuOfNowIsTheNewestSeconds()
-	{
-		final PanelSnapshot p = snapshot(Trace.steady(100).cpu(99, 99, 37, 95), 100, 1);
-		assertEquals(37, p.sysCpuPct);
-		assertEquals(95, p.gameBusyPct);
-		assertEquals("PC 37 %", p.strips[CPU].now);
-		assertEquals("Game 95 %", p.strips[CPU].now2);
-		final PanelSnapshot earlier = snapshot(Trace.steady(100).cpu(99, 99, 37, 95), 99, 1);
-		assertEquals(20, earlier.sysCpuPct);
-		assertEquals(40, earlier.gameBusyPct);
-	}
-
 	// ---------------------------------------------------------------- events and the rest
 
 	/** The range's CLOSED events, oldest first; the session's closed events; an open event is in neither. */
@@ -1022,7 +676,7 @@ public class SnapshotBuilderTest
 		final Trace t = Trace.steady(700);
 		final Session s = t.build();
 		s.events.add(closed(s, 0, 10, 15, Cause.SLOW_WORLD));
-		s.events.add(closed(s, 1, 95, 101, Cause.GC_PAUSE));
+		s.events.add(closed(s, 1, 95, 101, Cause.CLIENT_BUSY));
 		s.events.add(closed(s, 2, 640, 650, Cause.UPLOAD_LOSS));
 		s.events.add(open(s, 3, 690, 695));
 
@@ -1034,7 +688,7 @@ public class SnapshotBuilderTest
 		assertIds(build(s, t.settings(), 700, 1).rangeEvents, 2);
 		assertIds(build(s, t.settings(), 700, 60).rangeEvents, 0, 1, 2);
 		assertEquals(1, ten.sessionCounts[Group.WORLD.ordinal()]);
-		assertEquals(1, ten.sessionCounts[Group.MEMORY.ordinal()]);
+		assertEquals(1, ten.sessionCounts[Group.FRAME_RATE.ordinal()]);
 		assertEquals(1, ten.sessionCounts[Group.CONNECTION.ordinal()]);
 	}
 
@@ -1044,7 +698,8 @@ public class SnapshotBuilderTest
 	{
 		final Trace t = Trace.steady(100);
 		final Session s = t.build();
-		final Cause[] causes = {Cause.UPLOAD_LOSS, Cause.CLIENT_BUSY, Cause.GC_PAUSE, Cause.SLOW_WORLD, Cause.NOT_SURE};
+		final Cause[] causes = {Cause.UPLOAD_LOSS, Cause.CLIENT_BUSY, Cause.SLOW_DRAWING, Cause.SLOW_WORLD,
+			Cause.NOT_SURE};
 		for (int i = 0; i < 505; i++)
 		{
 			s.events.add(closed(s, i, 10, 10, causes[i % causes.length]));
@@ -1058,7 +713,7 @@ public class SnapshotBuilderTest
 		int sum = 0;
 		for (Group g : Group.values())
 		{
-			final int expected = g == Group.NONE ? 0 : 101;
+			final int expected = g == Group.NONE ? 0 : g == Group.FRAME_RATE ? 202 : 101;
 			assertEquals(g.label(), expected, p.sessionCounts[g.ordinal()]);
 			sum += p.sessionCounts[g.ordinal()];
 		}
@@ -1083,7 +738,7 @@ public class SnapshotBuilderTest
 		assertEquals("", BUILDER.build(s, SMOOTH, 10, 100, s.wallMsOf(100), settings, null).footer);
 	}
 
-	/** Choice: a null settings view is read as unknown settings on the RUNTIME source; nothing throws. */
+	/** Choice: a null settings view is read as unknown settings; nothing throws. */
 	@Test
 	public void aNullSettingsViewIsUnknown()
 	{
@@ -1091,8 +746,6 @@ public class SnapshotBuilderTest
 		final PanelSnapshot p = BUILDER.build(s, SMOOTH, 1, 100, s.wallMsOf(100), null, "");
 		assertNotNull(p.settings);
 		assertEquals(Renderer.UNKNOWN, p.settings.renderer);
-		assertEquals(MemorySource.RUNTIME, p.settings.memorySource);
-		assertDash(p.tiles[MEMORY], Lane.MEMORY, NoData.ERROR);
 		assertEquals("50 fps", p.tiles[FPS].value);
 	}
 
@@ -1116,10 +769,6 @@ public class SnapshotBuilderTest
 	public void fullSessionBuildsFast()
 	{
 		final Trace t = Trace.steady(3600).fps(1800, 1802, 10).rtt(2000, 2010, 250).usual(40);
-		for (int k = 7; k < 3600; k += 14)
-		{
-			t.gcPause(k, 100, 20, 300 + k % 200);
-		}
 		final Session s = t.build();
 		for (int i = 0; i < Thresholds.EVENTS; i++)
 		{
@@ -1157,23 +806,11 @@ public class SnapshotBuilderTest
 		return BUILDER.build(s, SMOOTH, minutes, nowSec, s.wallMsOf(nowSec), settings, "");
 	}
 
-	/** A trace's default settings with another renderer, heap limit and memory source. */
-	private static SettingsView settings(Renderer renderer, int heapMaxMb, MemorySource source)
-	{
-		return new SettingsView(renderer, false, false, 0, false, 0, false, "", 0, 0, "", 0, 60, heapMaxMb, source,
-			Os.WINDOWS, "");
-	}
-
-	private static SettingsView runtime()
-	{
-		return settings(Renderer.CPU, 768, MemorySource.RUNTIME);
-	}
-
 	/** FPS Control on with only its unfocused limit, at {@code unfocusedFps}; a GPU renderer unlocked at a target. */
 	private static SettingsView unfocusedLimit(Renderer renderer, int unfocusedFps, int gpuTarget)
 	{
 		return new SettingsView(renderer, true, false, 0, true, unfocusedFps, gpuTarget > 0, "OFF", gpuTarget, 50,
-			"MSAA_2", 0, 60, 768, MemorySource.MANAGEMENT, Os.WINDOWS, "");
+			"MSAA_2", 0, 60, Os.WINDOWS, "");
 	}
 
 	/** A closed event of seconds {@code from .. to}, judged with a verdict of {@code cause}. */
@@ -1181,15 +818,15 @@ public class SnapshotBuilderTest
 	{
 		final Verdict v = new Verdict(cause, Confidence.LIKELY, Level.BAD, "A lag", "It was measured.", "", "",
 			s.wallMsOf(from), (int) (to - from + 1), 416, id, null, null);
-		return new LagEvent(id, from, to, s.wallMsOf(from), Trigger.FRAME_GAP.bit(), Trigger.FRAME_GAP, 416, 0, 0, 0,
-			50, 480, 600, 600, 0, 40, 40, -1, 900, 0, 0, 400, 768, 20, 40, false, false, v);
+		return new LagEvent(id, from, to, s.wallMsOf(from), Trigger.FRAME_GAP.bit(), Trigger.FRAME_GAP, 416, 0, 0,
+			0, 50, 480, 600, 600, 0, 40, 40, -1, 900, 0, false, false, v);
 	}
 
 	/** An event still open: in the log, listed nowhere. */
 	private static LagEvent open(Session s, long id, long from, long to)
 	{
-		return new LagEvent(id, from, to, s.wallMsOf(from), Trigger.FRAME_GAP.bit(), Trigger.FRAME_GAP, 416, 0, 0, 0,
-			50, 480, 600, 600, 0, 40, 40, -1, 900, 0, 0, 400, 768, 20, 40, true, false, null);
+		return new LagEvent(id, from, to, s.wallMsOf(from), Trigger.FRAME_GAP.bit(), Trigger.FRAME_GAP, 416, 0, 0,
+			0, 50, 480, 600, 600, 0, 40, 40, -1, 900, 0, true, false, null);
 	}
 
 	/** The range of {@code p} in session ms: {@code [start, end)}. */
@@ -1239,15 +876,6 @@ public class SnapshotBuilderTest
 		assertTile(t, lane, Level.NO_DATA, "-", why.reason(), why);
 	}
 
-	private static void assertMemoryHasANumber(String what, Trace t, long nowSec)
-	{
-		final Tile memory = snapshot(t, nowSec, 1).tiles[MEMORY];
-		assertNotEquals(what, Level.NO_DATA, memory.level);
-		assertNotEquals(what, "-", memory.value);
-		assertEquals(what, NoData.NONE, memory.noData);
-		assertTrue(what + ": " + memory.value, memory.value.endsWith(" %"));
-	}
-
 	private static void assertLaneValue(Strip s, String now, Level level, Tile tile)
 	{
 		assertEquals(s.lane.label(), now, s.now);
@@ -1262,10 +890,6 @@ public class SnapshotBuilderTest
 		{
 			assertEquals(s.lane.label() + ", column " + c, NONE, s.values[c]);
 			assertEquals(s.lane.label() + ", column " + c, NO_DATA, s.levels[c]);
-			if (s.values2 != null)
-			{
-				assertEquals(s.lane.label() + ", column " + c, NONE, s.values2[c]);
-			}
 		}
 	}
 

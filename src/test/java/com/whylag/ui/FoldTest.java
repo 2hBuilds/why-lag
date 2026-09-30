@@ -85,7 +85,8 @@ public class FoldTest
 		PanelFixtures.paintPanel(folded);
 		assertEquals("the folded chart never paints", 0, folded.strips().paints());
 		assertEquals("the folded list never paints", 0, folded.eventList().paints());
-		assertEquals("and is not measured: the folded height", 443, PanelFixtures.contentHeight(folded));
+		assertEquals("and is not measured: the folded height, the picture's 443 less the button's 10 + 29", 443 - 10 - 29,
+			PanelFixtures.contentHeight(folded));
 
 		final WhyLagPanel open = panel(PanelFixtures.lag(), true);
 		PanelFixtures.paintPanel(open);
@@ -248,7 +249,8 @@ public class FoldTest
 		assertFalse(children(p).contains(p.strips()));
 		assertTrue(children(p).contains(p.eventList()));
 		PanelFixtures.layOut(p);
-		assertEquals("Lags open with one row: 443 + 3 + 24", 443 + 3 + 24, PanelFixtures.contentHeight(p));
+		assertEquals("Lags open with one row: 443 + 3 + 24, less the button's 10 + 29", 443 + 3 + 24 - 10 - 29,
+			PanelFixtures.contentHeight(p));
 	}
 
 	private static List<Component> children(WhyLagPanel p)

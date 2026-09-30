@@ -20,9 +20,8 @@ import static org.junit.Assert.fail;
 
 /**
  * The shared test helper does what contract 3.12 says: a steady trace is 50 fps, 600 ms ticks and no re-sends in
- * every second, PC 20 % and game 40 %, one inferred collection before it, no known pause, and a login at -60 that
- * makes it warm from second 0; and each builder method changes ONLY what it names (and what 3.12 says it changes
- * beyond its name). Every change below is measured against a steady trace of the same length, column by column and
+ * every second and a login at 0 that makes it warm from second 0; and each builder method changes ONLY what it names
+ * (and what 3.12 says it changes beyond its name). Every change below is measured against a steady trace of the same length, column by column and
  * second by second, so a builder that touched one column too many fails here rather than inside another lot's test.
  */
 public class TraceTest
@@ -45,8 +44,6 @@ public class TraceTest
 			assertEquals(22, r.worstFrameMs(sec));
 			assertEquals(500, r.worstFrameEndMs(sec));
 			assertEquals(0, r.slowFrames(sec));
-			assertEquals("the second's share: game 40 %", 400, r.busyPm(sec));
-			assertEquals("its worst frame's share", 300, r.worstBusyPm(sec));
 			assertEquals(0, r.loadingMs(sec));
 			assertEquals(State.LOGGED_IN, r.state(sec));
 			assertEquals("focused, logged in, nothing masked", Flags.FOCUSED, r.flags(sec));
@@ -54,7 +51,6 @@ public class TraceTest
 			assertEquals(40, r.rttMs(sec));
 			assertEquals("fresh", 0, r.rttAgeS(sec));
 			assertEquals(900, r.sentUnits(sec));
-			assertEquals(400, r.heapUsedMb(sec));
 			assertEquals(NoData.NONE, r.conn(sec));
 		}
 		final TickRing t = s.ticks;
@@ -90,67 +86,9 @@ public class TraceTest
 		assertEquals(Renderer.CPU, v.renderer);
 		assertEquals(50, v.capFps(true));
 		assertEquals(CapSource.CLIENT_50, v.capSource(true));
-		assertEquals(768, v.heapMaxMb);
-		assertEquals(MemorySource.MANAGEMENT, v.memorySource);
 		assertEquals(60, v.refreshHz);
 		assertEquals(Os.WINDOWS, v.os);
 		assertFalse(v.fpsControlActive);
-	}
-
-	@Test
-	public void heapAfterCollectionIsThreeHundredFromTheFirstSecondAndTouchesNoSpan()
-	{
-		final GcRing g = Trace.steady(100).build().gcs;
-		assertEquals("one collection, before the trace", 0, g.head());
-		assertEquals(-1000, g.startMs(0));
-		assertEquals("it has no length", -1, g.durationMs(0));
-		assertEquals(300, g.heapAfterAt(0));
-		assertEquals(300, g.heapAfterAt(99_999));
-		assertEquals(300, g.lastHeapAfterMb());
-		assertEquals(0, g.longestPauseMs(0, 99_999));
-		assertEquals("the tile's pause over the last window: measured, none", 0,
-			g.longestPauseMs((99 - Thresholds.WINDOW_S + 1) * 1000L, 99_999));
-		assertFalse(g.inferredIn(0, 99_999));
-	}
-
-	/** Every second: the whole PC at 20 % ("PC 20 %"), the process at 40, the game thread's second 400 per mille. */
-	@Test
-	public void theSteadyCpuIsPcTwentyGameForty()
-	{
-		final SecondRing r = Trace.steady(N).build().seconds;
-		for (long sec = 0; sec < N; sec++)
-		{
-			assertEquals("sysCpuPct @" + sec, 20, r.sysCpuPct(sec));
-			assertEquals("procCpuPct @" + sec, 40, r.procCpuPct(sec));
-			assertEquals("busyPm @" + sec, 400, r.busyPm(sec));
-			assertEquals("worstBusyPm @" + sec, 300, r.worstBusyPm(sec));
-			assertEquals("game 40 %", 40, Fmt.busyPct(r.busyPm(sec)));
-		}
-		final Session shifted = Trace.steady(10).shift(5).build();
-		assertEquals("the seconds a shift adds are steady too", 20, shifted.seconds.sysCpuPct(0));
-		assertEquals(400, shifted.seconds.busyPm(0));
-	}
-
-	/**
-	 * No known pause in a steady trace: {@code longestPauseMs} is 0 for every span - each second, and the window
-	 * the memory tile reads at every newest second - which on the default MANAGEMENT source reads "measured, none",
-	 * the memory tile's "pause 0 ms".
-	 */
-	@Test
-	public void aSteadyTraceHasNoKnownPause()
-	{
-		final Trace trace = Trace.steady(N);
-		final GcRing g = trace.build().gcs;
-		assertEquals(MemorySource.MANAGEMENT, trace.settings().memorySource);
-		assertEquals(0, g.longestPauseMs(Long.MIN_VALUE / 2, Long.MAX_VALUE / 2));
-		for (long sec = 0; sec < N; sec++)
-		{
-			assertEquals("second " + sec, 0, g.longestPauseMs(sec * 1000, sec * 1000 + 999));
-			assertEquals(0, g.overlapMs(sec * 1000, sec * 1000 + 1000));
-			assertEquals("the window that ends with second " + sec, 0,
-				g.longestPauseMs((sec - Thresholds.WINDOW_S + 1) * 1000, (sec + 1) * 1000 - 1));
-		}
-		assertEquals("the baseline collection has no length", 0, g.longestPauseMs(-2_000, 0));
 	}
 
 	/** The steady login is at -WARMUP_S (0 since the first live look): warm from second 0, nothing to wait for. */
@@ -182,43 +120,15 @@ public class TraceTest
 			.loggedInSinceSec());
 	}
 
-	/** {@code noBaselineCollection()}: the ring is empty until the test adds a collection. */
-	@Test
-	public void noBaselineCollectionLeavesTheRingEmpty()
-	{
-		final Session empty = Trace.steady(N).noBaselineCollection().build();
-		assertChanged(empty, keys());
-		assertEquals(-1, empty.gcs.head());
-		assertEquals(-1, empty.gcs.heapAfterAt(99_999));
-		assertEquals(-1, empty.gcs.lastHeapAfterMb());
-		final Session later = Trace.steady(N).noBaselineCollection().gcInferred(60, 300).build();
-		assertEquals(Arrays.asList("60000 -1 300"), gcs(later));
-		assertEquals("before the first collection", -1, later.gcs.heapAfterAt(59_999));
-		assertEquals(300, later.gcs.heapAfterAt(60_000));
-	}
-
-	/** {@code shift(k)} moves the baseline collection to {@code k x 1000 - 1000}: the columns before it have none. */
-	@Test
-	public void shiftMovesTheBaselineCollection()
-	{
-		final GcRing g = Trace.steady(N).shift(20).build().gcs;
-		assertEquals(Arrays.asList("19000 -1 300"), gcs(g));
-		assertEquals(-1, g.heapAfterAt(18_999));
-		assertEquals(300, g.heapAfterAt(19_000));
-		assertEquals("and a trace without one stays without", -1,
-			Trace.steady(N).noBaselineCollection().shift(20).build().gcs.head());
-	}
-
 	@Test
 	public void buildCanBeCalledAgainAndAnswersAFreshEqualSession()
 	{
-		final Trace trace = Trace.steady(N).frameGap(50, 500, 450).gcPause(60, 0, 150, 350).hop(70, 302);
+		final Trace trace = Trace.steady(N).frameGap(50, 500, 450).hop(70, 302);
 		final Session a = trace.build();
 		final Session b = trace.build();
 		assertNotSameSession(a, b);
 		assertEquals(seconds(a), seconds(b));
 		assertEquals(ticks(a), ticks(b));
-		assertEquals(gcs(a), gcs(b));
 	}
 
 	@Test
@@ -247,7 +157,7 @@ public class TraceTest
 	{
 		final Trace t = Trace.steady(10);
 		refused(() -> t.fps(5, 10, 30));
-		refused(() -> t.busy(-1, 500));
+		refused(() -> t.loading(-1, 500));
 		refused(() -> t.frameGap(5, 1000, 300));
 		refused(() -> t.rtt(6, 5, 40));
 		refused(() -> t.rttNoData(1, 2, NoData.NONE));
@@ -285,9 +195,9 @@ public class TraceTest
 	{
 		final Session s = Trace.steady(N).fps(40, 41, 0).build();
 		assertChanged(s, keys().span("frames", 40, 41).span("worstFrameMs", 40, 41).span("worstFrameEndMs", 40, 41)
-			.span("busyPm", 40, 41).span("worstBusyPm", 40, 41).span("flags", 40, 41));
+			.span("flags", 40, 41));
 		assertEquals(Flags.FOCUSED | Flags.NO_FRAMES, s.seconds.flags(40));
-		assertEquals(-1, s.seconds.busyPm(41));
+		assertEquals(0, s.seconds.frames(41));
 		assertTickTimingUnchanged(s);
 	}
 
@@ -334,8 +244,7 @@ public class TraceTest
 		final Session s = Trace.steady(N).frameGap(50, 300, 1500).build();
 		assertChanged(s, keys().span("worstFrameMs", 50, 50).span("worstFrameEndMs", 50, 50)
 			.span("slowFrames", 50, 50).span("frames", 49, 49).span("worstFrameMs", 49, 49)
-			.span("worstFrameEndMs", 49, 49).span("busyPm", 49, 49).span("worstBusyPm", 49, 49)
-			.span("flags", 49, 49));
+			.span("worstFrameEndMs", 49, 49).span("flags", 49, 49));
 		assertEquals(0, s.seconds.frames(49));
 		assertTrue(Flags.has(s.seconds.flags(49), Flags.NO_FRAMES));
 		assertEquals(300, s.seconds.worstFrameEndMs(50));
@@ -380,8 +289,7 @@ public class TraceTest
 		// flag; second 50, which it covers whole, is a no-frame second with no loading time and no LOADING flag.
 		final Session s = Trace.steady(N).loading(49, 800).frameGap(51, 300, 1450).build();
 		assertChanged(s, keys().span("loadingMs", 49, 49).span("flags", 49, 51).span("frames", 50, 50)
-			.span("worstFrameMs", 50, 51).span("worstFrameEndMs", 50, 51).span("busyPm", 50, 50)
-			.span("worstBusyPm", 50, 50).span("slowFrames", 51, 51));
+			.span("worstFrameMs", 50, 51).span("worstFrameEndMs", 50, 51).span("slowFrames", 51, 51));
 		assertEquals(Flags.FOCUSED | Flags.LOADING, s.seconds.flags(49));
 		assertEquals(Flags.FOCUSED | Flags.NO_FRAMES, s.seconds.flags(50));
 		assertEquals(Flags.FOCUSED | Flags.LOADING, s.seconds.flags(51));
@@ -397,92 +305,6 @@ public class TraceTest
 		final Session noTime = Trace.steady(N).loading(49, 0).frameGap(50, 300, 450).build();
 		assertEquals(Flags.FOCUSED | Flags.LOADING, noTime.seconds.flags(49));
 		assertEquals(Flags.FOCUSED, noTime.seconds.flags(50));
-	}
-
-	@Test
-	public void busyChangesTheWorstFramesShareOnly()
-	{
-		final Session s = Trace.steady(N).busy(50, 700).build();
-		assertChanged(s, keys().span("worstBusyPm", 50, 50));
-		assertEquals(700, s.seconds.worstBusyPm(50));
-		assertEquals("the second's own share is untouched", 400, s.seconds.busyPm(50));
-	}
-
-	@Test
-	public void busyUnknownChangesBothBusyColumnsEverywhereAndNothingElse()
-	{
-		final Session s = Trace.steady(N).busyUnknown().build();
-		assertChanged(s, keys().span("busyPm", 0, N - 1).span("worstBusyPm", 0, N - 1));
-		assertEquals(-1, s.seconds.worstBusyPm(0));
-		assertEquals(-1, s.seconds.busyPm(N - 1));
-		final Session shifted = Trace.steady(N).busyUnknown().shift(5).build();
-		assertEquals("seconds added by a shift are unknown too", -1, shifted.seconds.busyPm(0));
-	}
-
-	/**
-	 * {@code cpu} writes the PC's CPU and the SECOND's busy share (game % x 10) in its seconds only; -1 is unknown
-	 * for either; after {@code busyUnknown} or {@code fps(.., 0)} it writes the busy share again: the last call wins.
-	 */
-	@Test
-	public void cpuChangesItsSecondsOnly()
-	{
-		final Session s = Trace.steady(N).cpu(40, 42, 96, 100).build();
-		assertChanged(s, keys().span("sysCpuPct", 40, 42).span("busyPm", 40, 42));
-		assertEquals(96, s.seconds.sysCpuPct(41));
-		assertEquals(1000, s.seconds.busyPm(41));
-		assertEquals("the worst frame's share is busy()'s", 300, s.seconds.worstBusyPm(41));
-		assertEquals("the process's share is procCpu()'s", 40, s.seconds.procCpuPct(41));
-		assertTickTimingUnchanged(s);
-
-		final Session unknown = Trace.steady(N).cpu(50, 50, -1, -1).build();
-		assertChanged(unknown, keys().span("sysCpuPct", 50, 50).span("busyPm", 50, 50));
-		assertEquals(-1, unknown.seconds.sysCpuPct(50));
-		assertEquals(-1, unknown.seconds.busyPm(50));
-
-		final Session afterUnknown = Trace.steady(N).busyUnknown().cpu(40, 40, 30, 50).build();
-		assertEquals("the last call wins", 500, afterUnknown.seconds.busyPm(40));
-		assertEquals(-1, afterUnknown.seconds.busyPm(39));
-		assertEquals(-1, afterUnknown.seconds.worstBusyPm(40));
-		final Session afterNoFrames = Trace.steady(N).fps(40, 40, 0).cpu(40, 40, 30, 50).build();
-		assertEquals(500, afterNoFrames.seconds.busyPm(40));
-		assertEquals(0, afterNoFrames.seconds.frames(40));
-		final Session beforeNoFrames = Trace.steady(N).cpu(40, 40, 30, 50).fps(40, 40, 0).build();
-		assertEquals("the last call wins the other way too", -1, beforeNoFrames.seconds.busyPm(40));
-		refused(() -> Trace.steady(N).cpu(40, 40, -2, 50));
-		refused(() -> Trace.steady(N).cpu(40, 40, 30, -5));
-	}
-
-	@Test
-	public void procCpuChangesItsColumnOnly()
-	{
-		final Session s = Trace.steady(N).procCpu(40, 45, 250).build();
-		assertChanged(s, keys().span("procCpuPct", 40, 45));
-		assertEquals(250, s.seconds.procCpuPct(45));
-		assertChanged(Trace.steady(N).procCpu(50, 50, -1).build(), keys().span("procCpuPct", 50, 50));
-		refused(() -> Trace.steady(N).procCpu(40, 40, -3));
-	}
-
-	/** A Runtime-only PC: both CPU columns -1 in every second, and in the seconds a shift adds later. */
-	@Test
-	public void cpuUnknownCoversTheSecondsShiftAdds()
-	{
-		final Session s = Trace.steady(N).cpuUnknown().build();
-		assertChanged(s, keys().span("sysCpuPct", 0, N - 1).span("procCpuPct", 0, N - 1));
-		assertEquals(-1, s.seconds.sysCpuPct(0));
-		assertEquals(-1, s.seconds.procCpuPct(N - 1));
-		assertEquals("the busy columns are busyUnknown()'s", 400, s.seconds.busyPm(0));
-		final Session shifted = Trace.steady(N).cpuUnknown().shift(5).build();
-		assertEquals("seconds added by a shift are unknown too", -1, shifted.seconds.sysCpuPct(0));
-		assertEquals(-1, shifted.seconds.procCpuPct(4));
-		assertEquals(400, shifted.seconds.busyPm(0));
-		final Session runtimeOnly = Trace.steady(N).cpuUnknown().busyUnknown().shift(5).build();
-		for (long sec = 0; sec < N + 5; sec++)
-		{
-			assertEquals(-1, runtimeOnly.seconds.sysCpuPct(sec));
-			assertEquals(-1, runtimeOnly.seconds.busyPm(sec));
-		}
-		assertEquals("cpu() after cpuUnknown() writes its span", 30,
-			Trace.steady(N).cpuUnknown().cpu(40, 40, 30, 50).build().seconds.sysCpuPct(40));
 	}
 
 	@Test
@@ -503,28 +325,6 @@ public class TraceTest
 		refused(() -> Trace.steady(N).npcs(1, 1, -1));
 		refused(() -> Trace.steady(N).region(1, 1, 65_536));
 		refused(() -> Trace.steady(N).region(1, 1, -1));
-	}
-
-	@Test
-	public void gcPauseAddsOneKnownPauseAndNothingElse()
-	{
-		final Session s = Trace.steady(N).gcPause(50, 250, 150, 400).build();
-		assertChanged(s, keys());
-		assertTickTimingUnchanged(s);
-		assertEquals(Arrays.asList("-1000 -1 300", "50250 150 400"), gcs(s));
-		assertEquals("second 50, its first to its last ms", 150, s.gcs.longestPauseMs(50_000, 50_999));
-		assertEquals(0, s.gcs.longestPauseMs(49_000, 49_999));
-	}
-
-	@Test
-	public void gcInferredAddsOneCollectionWithNoLengthAtTheSecondsStart()
-	{
-		final Session s = Trace.steady(N).gcInferred(50, 350).build();
-		assertChanged(s, keys());
-		assertEquals(Arrays.asList("-1000 -1 300", "50000 -1 350"), gcs(s));
-		assertTrue(s.gcs.inferredIn(50_000, 50_999));
-		assertFalse("second 49's span ends at its last ms", s.gcs.inferredIn(49_000, 49_999));
-		assertEquals(0, s.gcs.longestPauseMs(0, N * 1000 - 1));
 	}
 
 	@Test
@@ -779,7 +579,6 @@ public class TraceTest
 		assertEquals("nor the frame rate usual", 0, s.fpsUsual.count());
 		assertChanged(s, keys());
 		assertTickTimingUnchanged(s);
-		assertEquals(gcs(Trace.steady(N).build()), gcs(s));
 		assertEquals("a fresh session each build, with the usual again", 40, trace.build().rttUsual.median());
 		assertEquals("the last call wins", 90, Trace.steady(N).usual(40).usual(90).build().rttUsual.median());
 		assertEquals("a shift keeps it", 40, Trace.steady(N).usual(40).shift(10).build().rttUsual.median());
@@ -794,15 +593,6 @@ public class TraceTest
 		assertChanged(s, keys().span("resentUnits", 50, 50));
 		assertEquals(300, s.seconds.resentUnits(50));
 		assertEquals("re-sent is not added to sent", 900, s.seconds.sentUnits(50));
-	}
-
-	@Test
-	public void heapChangesTheUsedHeapOnly()
-	{
-		final Session s = Trace.steady(N).heap(40, 45, 700).build();
-		assertChanged(s, keys().span("heapUsedMb", 40, 45));
-		assertEquals(700, s.seconds.heapUsedMb(45));
-		assertEquals("heap after collection is a collection's, not the used heap", 300, s.gcs.heapAfterAt(45_000));
 	}
 
 	@Test
@@ -899,18 +689,16 @@ public class TraceTest
 	@Test
 	public void settingsAreAnsweredAndWriteNoRing()
 	{
-		final SettingsView v = SettingsView.unknown(512, Os.MAC, MemorySource.RUNTIME);
+		final SettingsView v = SettingsView.unknown(Os.MAC);
 		final Trace t = Trace.steady(N).settings(v);
 		assertSame(v, t.settings());
 		assertChanged(t.build(), keys());
-		assertEquals(gcs(Trace.steady(N).build()), gcs(t.build()));
 	}
 
 	@Test
 	public void shiftMovesTheWholeTraceLater()
 	{
-		final Trace original = Trace.steady(N).frameGap(50, 500, 450).gcPause(50, 0, 150, 400).hop(70, 302)
-			.noTicks(80, 82);
+		final Trace original = Trace.steady(N).frameGap(50, 500, 450).hop(70, 302).noTicks(80, 82);
 		final Session before = original.build();
 		final Session after = original.shift(20).build();
 		assertEquals(N + 20, original.seconds());
@@ -944,7 +732,6 @@ public class TraceTest
 			assertEquals("the filler ticks are 600 apart", "600", now.get(i).split(" ")[1]);
 		}
 		assertEquals("the join is one tick apart", "600", now.get(filler).split(" ")[1]);
-		assertEquals(Arrays.asList("19000 -1 300", "70000 150 400"), gcs(after));
 	}
 
 	/**
@@ -1034,8 +821,6 @@ public class TraceTest
 			m.put("worstFrameMs@" + sec, "" + r.worstFrameMs(sec));
 			m.put("worstFrameEndMs@" + sec, "" + r.worstFrameEndMs(sec));
 			m.put("slowFrames@" + sec, "" + r.slowFrames(sec));
-			m.put("busyPm@" + sec, "" + r.busyPm(sec));
-			m.put("worstBusyPm@" + sec, "" + r.worstBusyPm(sec));
 			m.put("loadingMs@" + sec, "" + r.loadingMs(sec));
 			m.put("state@" + sec, "" + r.state(sec));
 			m.put("flags@" + sec, "" + r.flags(sec));
@@ -1047,9 +832,6 @@ public class TraceTest
 			m.put("rttAgeS@" + sec, "" + r.rttAgeS(sec));
 			m.put("sentUnits@" + sec, "" + r.sentUnits(sec));
 			m.put("resentUnits@" + sec, "" + r.resentUnits(sec));
-			m.put("heapUsedMb@" + sec, "" + r.heapUsedMb(sec));
-			m.put("procCpuPct@" + sec, "" + r.procCpuPct(sec));
-			m.put("sysCpuPct@" + sec, "" + r.sysCpuPct(sec));
 			m.put("conn@" + sec, r.conn(sec).name());
 		}
 		return m;
@@ -1076,22 +858,6 @@ public class TraceTest
 		{
 			out.add(t.atMs(q) + " " + t.gapMs(q) + " " + t.frameMs(q) + " " + t.cycleJump(q) + " " + t.rttMs(q)
 				+ " " + t.flags(q));
-		}
-		return out;
-	}
-
-	/** Each collection as "startMs durationMs heapAfterMb". */
-	private static List<String> gcs(Session s)
-	{
-		return gcs(s.gcs);
-	}
-
-	private static List<String> gcs(GcRing g)
-	{
-		final List<String> out = new ArrayList<>();
-		for (long q = g.tail(); q <= g.head(); q++)
-		{
-			out.add(g.startMs(q) + " " + g.durationMs(q) + " " + g.heapAfterMb(q));
 		}
 		return out;
 	}

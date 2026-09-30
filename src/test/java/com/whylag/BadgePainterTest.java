@@ -601,21 +601,20 @@ public class BadgePainterTest
 
 	// ---------------------------------------------------------------- helpers
 
-	/** Every row of contract 3.6's table: the answers of the fifteen rules and of the three card states. */
+	/** Every row of contract 3.6's table: the answers of the twelve causes left and of the three card states. */
 	static List<Answer> table()
 	{
 		final List<Answer> out = new ArrayList<>();
 		for (Cause c : new Cause[] {Cause.ALL_CLEAR, Cause.SLOW_WORLD, Cause.PING_JUMPY, Cause.PING_HIGH,
 			Cause.UPLOAD_LOSS, Cause.DISCONNECT, Cause.DELIVERY_GAP, Cause.SLOW_DRAWING, Cause.FRAME_CAP,
-			Cause.CLIENT_BUSY, Cause.CLIENT_WAITING, Cause.MAP_LOAD, Cause.GC_PAUSE, Cause.HEAP_CAP_LOW,
-			Cause.NOT_SURE})
+			Cause.CLIENT_BUSY, Cause.MAP_LOAD, Cause.NOT_SURE})
 		{
 			out.add(Answer.of(c));
 		}
 		out.add(Answer.MEASURING);
 		out.add(Answer.NOT_LOGGED_IN);
 		out.add(Answer.WAITING);
-		assertEquals(18, out.size());
+		assertEquals(15, out.size());
 		return out;
 	}
 

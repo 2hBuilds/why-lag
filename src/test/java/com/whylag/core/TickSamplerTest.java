@@ -51,7 +51,7 @@ public class TickSamplerTest
 
 	private void frame(long ms)
 	{
-		frames.frame(at(ms), (int) (ms / CYCLE_MS), -1);
+		frames.frame(at(ms), (int) (ms / CYCLE_MS));
 	}
 
 	/**

@@ -24,7 +24,7 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * Pictures for the checker's eye (contract P2.3, section 8): every state of picture 22, part A - smooth, world lag,
- * ping lag, low FPS, memory stall (the picture's "Memory pause", slow: a triangle), not sure, measuring - and the
+ * ping lag, low FPS, client froze (slow, not lag: a triangle), not sure, measuring - and the
  * dimmed world lag, in each of the four styles, each on a dark green ground, to
  * {@code build/whylag/badge-<style>-<state>.png}, and ONE sheet of them all, {@code build/whylag/badge-sheet.png}.
  * The files are checked to exist and not to be blank.
@@ -35,7 +35,7 @@ import static org.junit.Assert.assertTrue;
  *
  * <p>Choice: the ground is 38,58,30 with 6 px round each badge; the sheet: styles as columns, states as rows.
  * <p>Choice: a file is badge-{style}-{state}.png, both in lower case with dashes: badge-icon-and-words-world-lag.png.
- * <p>Choice: the memory row is WARN with "Memory stall", as picture 22's row 5 ("slow, not lag: triangle").
+ * <p>Choice: the client-froze row is WARN with "Client froze", as picture 22's row 5 ("slow, not lag: triangle").
  */
 public class BadgeRenderTest
 {
@@ -79,8 +79,8 @@ public class BadgeRenderTest
 		out.add(new State("ping-lag", Level.BAD, ping, false, ping.oneLine, "Ping 310 ms, ticks 1,240 ms"));
 		final Answer fps = Answer.of(Cause.SLOW_DRAWING);
 		out.add(new State("low-fps", Level.BAD, fps, false, fps.oneLine, "Worst frame 480 ms, 50 fps"));
-		final Answer memory = Answer.of(Cause.GC_PAUSE);
-		out.add(new State("memory-stall", Level.WARN, memory, false, memory.oneLine, "Pause 340 ms, memory 742 MB"));
+		final Answer froze = Answer.of(Cause.CLIENT_BUSY);
+		out.add(new State("client-froze", Level.WARN, froze, false, froze.oneLine, "Worst frame 340 ms, 50 fps"));
 		final Answer lag = Answer.of(Cause.NOT_SURE);
 		out.add(new State("not-sure", Level.BAD, lag, false, lag.oneLine, "Ticks 1,240 ms, worst frame 170 ms"));
 		out.add(new State("measuring", Level.NO_DATA, Answer.MEASURING, false, "Still measuring", "Ready in 40 s."));

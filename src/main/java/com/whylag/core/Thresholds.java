@@ -11,7 +11,7 @@ package com.whylag.core;
  * <p>These are NOT thresholds and stay where they are used: sizes and pixels in {@code ui} and in the badge's
  * painter (layout, contract 5 and P2.4); the panel's own timing and cap (the 2 s that "Copied" shows, the "99+" of a
  * count over 99, in {@code ui}); the length limits and the largest printed values of the words (in {@code Words})
- * and of the cells (in {@link Cells}: 999 and 9,999); the rounding of three fillers of the words (in {@code Words}:
+ * and of the cells (in {@link Cells}: 9,999); the rounding of three fillers of the words (in {@code Words}:
  * W1's "{900}+" is rounded down to a multiple of 10, the share "{2} in 100" is {@code max(1, (pm + 5) / 10)}, V2's
  * minutes are at least 1); the rank, base and ceiling of each rule (in {@code Rules}); unit conversions (1000, 100,
  * 60); the ranges of the ring columns (the clamp table of contract 3.3); the two maxima of the usuals (2000 and 1000,
@@ -29,8 +29,6 @@ public final class Thresholds
 	public static final int SECONDS = 3600;
 	/** Readable ticks; the ring holds one slot more. Set by design. */
 	public static final int TICKS = 6000;
-	/** Readable memory pauses; the ring holds one slot more. Set by design. */
-	public static final int GC_PAUSES = 256;
 	/** Events the log holds; older ones are dropped, their session counts kept. Set by design. */
 	public static final int EVENTS = 500;
 	/** One server tick, in ms. Set by design. */
@@ -91,7 +89,7 @@ public final class Thresholds
 	public static final int LOAD_TAIL_S = 1;
 	/** D1 judges this many seconds that end at the LAST tick. Set by E10. */
 	public static final int D1_LOOK_S = 10;
-	/** A cap's pacing explains a frame gap up to this many cap intervals. Set by E9. */
+	/** A cap's pacing explains a frame gap up to this many cap intervals (S3's exclude). Set by E9. */
 	public static final int CAP_WAIT_FACTOR = 2;
 	/**
 	 * "Ready in", the warm-up's counting text, steps by this many seconds; "No lag for" steps by it under a minute,
@@ -134,30 +132,6 @@ public final class Thresholds
 	public static final int RESENT_PER_MILLE = 10;
 	/** Seconds either side of an event searched for re-sends. Set by E10. */
 	public static final int RESENT_LOOK_S = 2;
-	/** A known memory pause this long or longer fires GC_PAUSE. Set by E8. */
-	public static final int GC_PAUSE_MS = 100;
-	/** G1 needs the pause to cover this % of the frame gap (C7). Set by E8. */
-	public static final int GC_COVER_PCT = 60;
-	/** Memory tile: a longest pause in the {@link #WINDOW_S} window of this or more is WARN. Set by E8. */
-	public static final int GC_WARN_MS = 100;
-	/** Memory tile: a longest pause in the {@link #WINDOW_S} window of this or more is BAD. Set by E8. */
-	public static final int GC_BAD_MS = 300;
-	/** Memory tile: heap AFTER collection at this % of the limit or more is WARN (C7). Set by E8. */
-	public static final int HEAP_WARN_PCT = 85;
-	/** Memory tile: heap AFTER collection at this % of the limit or more is BAD (C7). Set by E8. */
-	public static final int HEAP_BAD_PCT = 93;
-	/** Fallback memory source: a fall of this many MB in one second is a collection. Set by E8. */
-	public static final int HEAP_DROP_MB = 64;
-	/** G2: a memory limit under this many MB is too low. Set by design. */
-	public static final int HEAP_CAP_LOW_MB = 700;
-	/** Client-thread busy share, per mille: at or under this the client was waiting. Set by E2 and E9. */
-	public static final int BUSY_LOW_PM = 300;
-	/** Client-thread busy share, per mille: at or over this the client was working hard. Set by E2 and E9. */
-	public static final int BUSY_HIGH_PM = 600;
-	/** CPU lane: the whole PC's use at this % or more is WARN. Set by E13. */
-	public static final int CPU_WARN_PCT = 85;
-	/** CPU lane: the whole PC's use at this % or more is BAD. Set by E13. */
-	public static final int CPU_BAD_PCT = 95;
 	/** S1: a load this long or longer is listed. Set by E14. */
 	public static final int LOAD_LONG_MS = 2000;
 	/** S1's words count the loads of this many seconds ("the last 10 min"). Set by design. */
@@ -196,9 +170,7 @@ public final class Thresholds
 	public static final int STRIP_PING_MAX_MS = 100;
 	/** Ping lane: the scale's top is at least this % of the highest RTT. Set by design. */
 	public static final int STRIP_PING_PAD_PCT = 120;
-	/** CPU lane: the scale's top, in %, fixed. Set by design. */
-	public static final int STRIP_CPU_MAX_PCT = 100;
-	/** A hole of at most this many host seconds takes the readings of the sample that closes it (L2). Set by design. */
+	/** A hole of at most this many host seconds takes the ping readings of the sample that closes it (L2). Design. */
 	public static final int HOST_FILL_S = 3;
 	/** The badge keeps a lag, dimmed, this many seconds past the event's last trigger second (P2.2). Set by design. */
 	public static final int BADGE_HOLD_S = 15;

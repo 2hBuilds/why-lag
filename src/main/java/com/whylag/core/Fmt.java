@@ -10,9 +10,6 @@ import java.time.ZoneOffset;
  */
 public final class Fmt
 {
-	private static final int PERCENT = 100;
-	private static final int PER_MILLE_PER_PERCENT = 10;
-
 	private Fmt()
 	{
 	}
@@ -101,28 +98,6 @@ public final class Fmt
 	public static String lags(int n)
 	{
 		return thousands(n) + (n == 1 ? " lag" : " lags");
-	}
-
-	/**
-	 * A share with its word: the word, a space, the number, a space, "%". {@code ("PC", 37)} is "PC 37 %",
-	 * {@code ("Game", 100)} is "Game 100 %". The caller leaves out a share it does not know.
-	 */
-	public static String pct(String word, int pct)
-	{
-		return word + " " + pct + " %";
-	}
-
-	/**
-	 * A per mille share as a whole per cent, rounded down and held at 100: under 0 is -1 ("no data"), else
-	 * {@code min(100, busyPm / 10)}. 955 is 95, 1400 is 100.
-	 */
-	public static int busyPct(int busyPm)
-	{
-		if (busyPm < 0)
-		{
-			return -1;
-		}
-		return Math.min(PERCENT, busyPm / PER_MILLE_PER_PERCENT);
 	}
 
 	/** {@code v} held inside {@code lo .. hi}. */

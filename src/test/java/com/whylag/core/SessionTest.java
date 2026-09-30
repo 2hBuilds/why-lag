@@ -77,12 +77,11 @@ public class SessionTest
 		assertEquals(Thresholds.SECONDS + 1, s.seconds.capacity());
 		assertEquals(-1, s.seconds.head());
 		assertEquals(-1, s.ticks.head());
-		assertEquals(-1, s.gcs.head());
 		assertEquals(0, s.events.size());
 		for (int i = 0; i <= Thresholds.EVENTS; i++)
 		{
 			s.events.add(new LagEvent(i, i, i, 0, 0, Trigger.FRAME_GAP, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1,
-				0, 0, -1, -1, -1, -1, -1, true, false, null));
+				0, 0, true, false, null));
 		}
 		assertEquals(Thresholds.EVENTS, s.events.size());
 	}

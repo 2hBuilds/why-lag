@@ -5,13 +5,8 @@ package com.whylag.core;
  * column, each the WORST of its time slice ({@link #NONE} = no data in that column, drawn as a gap), the
  * {@link Level} ordinal of each column, the scale, and the value printed at the lane's right.
  *
- * <p><b>A second series.</b> A lane may carry a second, dim series on the same scale: {@link #values2}, with no
- * level of its own, and its value {@link #now2}. The CPU lane uses it: {@link #values} is the whole PC's use (the
- * coloured line, "PC 37 %"), {@link #values2} the game thread's share (the grey line, "Game 95 %"). The
- * seven-argument constructor means "no second series": {@code values2} null, {@code now2} "".
- *
- * <p>The arrays belong to the strip once built: nobody writes them after construction. A null {@code now} or
- * {@code now2} is kept as "".
+ * <p>The arrays belong to the strip once built: nobody writes them after construction. A null {@code now} is kept
+ * as "".
  *
  * <p><b>The time map</b> (contract 5.3). A range {@code [start, end)} is cut into {@link Thresholds#STRIP_COLUMNS}
  * columns by {@link #columnOf} and {@link #columnStart}, the one rule for the snapshot (which maps session ms) and
@@ -29,31 +24,19 @@ public final class Strip
 	public final Lane lane;
 	/** {@link Thresholds#STRIP_COLUMNS} long; {@link #NONE} = no data in that column. */
 	public final int[] values;
-	/** {@link Level} ordinal per column, of {@link #values} (the second series has no level). */
+	/** {@link Level} ordinal per column, of {@link #values}. */
 	public final byte[] levels;
-	/** The scale, of both series. */
+	/** The scale. */
 	public final int min, max;
 	/**
-	 * The value at the lane's right (contract 5.3): the tile's value for frame rate, ticks and ping ("50 fps"), the
-	 * after-collection % for memory, "PC 37 %" for the CPU lane; "" = no value now (the panel draws one "-").
+	 * The value at the lane's right (contract 5.3): the tile's value ("50 fps", "952 ms", "41 ms"); "" = no value
+	 * now (the panel draws one "-").
 	 */
 	public final String now;
 	/** The level of {@link #now}; NO_DATA when it is "". */
 	public final Level nowLevel;
-	/** A second, dim series on the same scale; null = none; {@link #NONE} = no data in that column. */
-	public final int[] values2;
-	/** The CPU lane: "Game 95 %"; "" = none. */
-	public final String now2;
 
-	/** A lane with no second series: {@code values2} null, {@code now2} "". */
 	public Strip(Lane lane, int[] values, byte[] levels, int min, int max, String now, Level nowLevel)
-	{
-		this(lane, values, levels, min, max, now, nowLevel, null, "");
-	}
-
-	/** A lane with a second series, {@code values2} and its value {@code now2}. */
-	public Strip(Lane lane, int[] values, byte[] levels, int min, int max, String now, Level nowLevel,
-		int[] values2, String now2)
 	{
 		this.lane = lane;
 		this.values = values;
@@ -62,8 +45,6 @@ public final class Strip
 		this.max = max;
 		this.now = now == null ? "" : now;
 		this.nowLevel = nowLevel;
-		this.values2 = values2;
-		this.now2 = now2 == null ? "" : now2;
 	}
 
 	/**

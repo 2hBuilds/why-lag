@@ -38,20 +38,10 @@ public final class Evidence
 	public int frameGapMs = -1;
 	/** {@code settings.frameGapLimitMs(f)}, f the focus of the second judged (contract 3.7); -1 = no second. */
 	public int frameLimitMs = -1;
-	/** The longest KNOWN pause touching the worst frame's interval; 0 = measured, none; -1 = cannot be known. */
-	public int gcMs = -1;
-	/** The share of the worst frame that one known pause covered, 0..100; -1 = cannot be known. */
-	public int gcCoverPct = -1;
-	/** The ms of the worst frame that one known pause covered; -1 = cannot be known. */
-	public int gcOverlapMs = -1;
-	/** An inferred collection (no length) lies in the worst frame's interval. */
-	public boolean gcInferred;
 	/** Events: the summed loading time of every LOADING run with a second in startSec - 1 .. endSec. */
 	public int loadMs;
 	/** Events: the LOADING runs of the last {@link Thresholds#LOADS_LOOK_S} seconds, back from the event's end. */
 	public int loads;
-	/** The busy share of the worst frame, per mille; -1 = no data. */
-	public int busyPm = -1;
 	/** The cap in force in the second judged; 0 = none known. */
 	public int capFps;
 	/** {@code 1000 / capFps}; 0 = no cap. */
@@ -111,10 +101,6 @@ public final class Evidence
 	/** Conditions: an event, open or closed, overlaps the window; an open one reaches the newest second. */
 	public boolean eventInWindow;
 
-	/** The highest used heap; -1 = none. */
-	public int heapUsedMb = -1;
-	/** The settings' heap limit; -1 when it is 0 or less (unknown). */
-	public int heapMaxMb = -1;
 	/** Events: the event's length in seconds; 0 for a condition. */
 	public int durationS;
 	/** Events: the world of the first second. Conditions: the newest second's. 0 = none. */

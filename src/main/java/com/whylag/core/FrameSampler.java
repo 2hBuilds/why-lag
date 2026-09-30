@@ -7,12 +7,12 @@ package com.whylag.core;
  * the newest frame is ({@link Session#framesStopped}).
  *
  * <p><b>Missed seconds.</b> A second in which no {@code frame()} call landed is written as a filler: frames 0,
- * worst frame 0, both busy shares -1 and the {@link Flags#NO_FRAMES} flag. EVERY missed second is written, however
+ * worst frame 0 and the {@link Flags#NO_FRAMES} flag. EVERY missed second is written, however
  * many there are; a stall is charged to the second it ENDED in, with {@code worstFrameEndMs} = where in that second
  * it ended.
  *
  * <p><b>The first frame</b> starts the frame clock: it counts in {@code frames} but closes no interval, so it adds
- * nothing to the worst frame, the slow frames or either busy share.
+ * nothing to the worst frame or the slow frames.
  *
  * <p><b>The state and the flags of a second.</b> {@code state} is the code in force at the second's END;
  * {@link Flags#NOT_LOGGED_IN} goes with OTHER, LOGIN_SCREEN and LOGGING_IN; {@link Flags#LOADING},
@@ -35,9 +35,6 @@ package com.whylag.core;
  * Choice: the state before the first {@code state()} call is OTHER, and the focus before the first
  * {@code focus()} call is true.
  * <br>
- * Choice: a second's {@code busyPm} is the thread CPU time of the frame intervals that ENDED in it over their
- * wall time; it is -1 when no interval ended in it or when the CPU clock answered -1 for any of them.
- * <br>
  * Choice: of two frames of the same length the LATER is the second's worst frame (as {@code Trace.frameGap}).
  * <br>
  * Choice: {@code slowFrames} stops counting at 127, the column's top.
@@ -55,7 +52,6 @@ public final class FrameSampler
 	private static final long NANOS_PER_SECOND = 1_000_000_000L;
 	private static final long NANOS_PER_MS = 1_000_000L;
 	private static final int MS_PER_SECOND = 1000;
-	private static final int PER_MILLE = 1000;
 	/** The last ms of a second: the top of {@code worstFrameEndMs}. */
 	private static final int LAST_MS = MS_PER_SECOND - 1;
 	/** State changes that may wait for the frame that closes their second. */
@@ -75,14 +71,11 @@ public final class FrameSampler
 	// ---- the frame clock
 	private boolean started;
 	private long lastFrameNanos;
-	private long lastCpuNanos;
 	private int worstSinceTickMs;
 
 	// ---- the open second
 	private long openSec;
-	private int frames, worstMs, worstEndMs, slow, worstBusyPm = -1, intervals, extraFlags;
-	private long cpuSum, wallSum;
-	private boolean cpuUnknown;
+	private int frames, worstMs, worstEndMs, slow, extraFlags;
 
 	// ---- the states: the code in force now, the code in force where the pending list starts, and the list
 	private int liveState = State.OTHER;
@@ -110,10 +103,10 @@ public final class FrameSampler
 	}
 
 	/**
-	 * One frame, stamped {@code nanos} ({@code System.nanoTime()}), with the game cycle and the client thread's CPU
-	 * clock ({@code -1} = unsupported). Client thread; allocates nothing.
+	 * One frame, stamped {@code nanos} ({@code System.nanoTime()}), with the game cycle. Client thread; allocates
+	 * nothing.
 	 */
-	public void frame(long nanos, int gameCycle, long threadCpuNanos)
+	public void frame(long nanos, int gameCycle)
 	{
 		final boolean timed = timer != null && timer.on();
 		final long t0 = timed ? System.nanoTime() : 0L;
@@ -131,27 +124,10 @@ public final class FrameSampler
 		{
 			final long wall = Math.max(0L, nanos - lastFrameNanos);
 			final int ms = (int) Math.min(wall / NANOS_PER_MS, Integer.MAX_VALUE);
-			int busy = -1;
-			if (threadCpuNanos >= 0 && lastCpuNanos >= 0)
-			{
-				final long cpu = Math.max(0L, threadCpuNanos - lastCpuNanos);
-				cpuSum += cpu;
-				if (wall > 0)
-				{
-					busy = (int) Math.min(PER_MILLE, cpu * PER_MILLE / wall);
-				}
-			}
-			else
-			{
-				cpuUnknown = true;
-			}
-			wallSum += wall;
-			intervals++;
 			if (ms >= worstMs)
 			{
 				worstMs = ms;
 				worstEndMs = (int) Math.max(0L, Math.min(LAST_MS, session.msOf(nanos) - openSec * MS_PER_SECOND));
-				worstBusyPm = busy;
 			}
 			if (ms >= Thresholds.SLOW_FRAME_MS && slow < Byte.MAX_VALUE)
 			{
@@ -168,7 +144,6 @@ public final class FrameSampler
 		}
 		started = true;
 		lastFrameNanos = nanos;
-		lastCpuNanos = threadCpuNanos;
 		loadingSinceFrame = false;
 
 		if (timed)
@@ -350,10 +325,6 @@ public final class FrameSampler
 		r.worstFrameMs = worstMs;
 		r.worstFrameEndMs = worstEndMs;
 		r.slowFrames = slow;
-		r.busyPm = intervals > 0 && !cpuUnknown && wallSum > 0
-			? (int) Math.min(PER_MILLE, cpuSum * PER_MILLE / wallSum)
-			: -1;
-		r.worstBusyPm = intervals > 0 ? worstBusyPm : -1;
 		r.loadingMs = (int) Math.min(MS_PER_SECOND, walkLoadNanos / NANOS_PER_MS);
 		r.state = walkState;
 		r.flags = fl;
@@ -368,12 +339,7 @@ public final class FrameSampler
 		worstMs = 0;
 		worstEndMs = 0;
 		slow = 0;
-		worstBusyPm = -1;
-		intervals = 0;
 		extraFlags = 0;
-		cpuSum = 0;
-		wallSum = 0;
-		cpuUnknown = false;
 	}
 
 	/**

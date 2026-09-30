@@ -13,36 +13,11 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * The near misses of contract section 7 (L4): every skeptic trap where a trace LOOKS like one cause and is another
- * (C2, C3, C4, C5, C7, C9, C21), the designed "Can't tell", and the three condition cases.
+ * (C2, C3, C4, C5, C9, C21), the designed "Can't tell", and the three condition cases.
  */
 public class VerdictNearMissTest
 {
 	private final VerdictEngine judge = new VerdictEngine();
-
-	/** C7: a pause that covers half of the freeze is part of a stall, not its cause. */
-	@Test
-	public void gcCoversHalfIsAStallNotMemory()
-	{
-		final Trace t = Trace.steady(200).usual(USUAL).frameGap(120, 600, 480).busy(120, 700)
-			.gcPause(120, 120, 240, 400);
-		final Session s = t.build();
-		final LagEvent e = event(s, 0, 120, 120, Trigger.FRAME_GAP, Trigger.GC_PAUSE);
-		final Evidence ev = EvidenceBuilder.forEvent(s, e, t.settings());
-		assertEquals(240, ev.gcMs);
-		assertEquals(50, ev.gcCoverPct);
-		assertEquals("under GC_COVER_PCT: G1's need fails", 0, Rules.G1.score(ev));
-
-		final Verdict v = judge.judgeEvent(s, e, t.settings());
-		assertEquals(Cause.CLIENT_BUSY, v.cause);
-		assertEquals("A 480 ms freeze. 240 ms was memory clean-up.", v.proof);
-
-		// The same freeze with the pause covering 60 % of it is memory.
-		final Trace covered = Trace.steady(200).usual(USUAL).frameGap(120, 600, 480).busy(120, 700)
-			.gcPause(120, 120, 288, 400);
-		final Session cs = covered.build();
-		assertEquals(Cause.GC_PAUSE, judge.judgeEvent(cs, event(cs, 0, 120, 120, Trigger.FRAME_GAP,
-			Trigger.GC_PAUSE), covered.settings()).cause);
-	}
 
 	/** C3: three late deliveries, each caught up, do not make a slow world: the median gap stays 600. */
 	@Test
@@ -128,8 +103,7 @@ public class VerdictNearMissTest
 	@Test
 	public void eventHoldingADisconnectIsD1()
 	{
-		final Trace t = Trace.steady(200).usual(USUAL).frameGap(118, 600, 480).busy(118, 700).resent(119, 90)
-			.disconnect(120);
+		final Trace t = Trace.steady(200).usual(USUAL).frameGap(118, 600, 480).resent(119, 90).disconnect(120);
 		final Session s = t.build();
 		final LagEvent e = event(s, 0, 118, 120, Trigger.FRAME_GAP, Trigger.RESENT, Trigger.DISCONNECT);
 		final Evidence ev = EvidenceBuilder.forEvent(s, e, t.settings());
@@ -148,13 +122,13 @@ public class VerdictNearMissTest
 	@Test
 	public void eventThatClosedBeforeADisconnectKeepsItsVerdict()
 	{
-		final Trace stall = Trace.steady(200).usual(USUAL).frameGap(100, 600, 480).busy(100, 700);
+		final Trace stall = Trace.steady(200).usual(USUAL).frameGap(100, 600, 480);
 		final Session before = stall.build();
 		final Verdict alone = judge.judgeEvent(before, event(before, 0, 100, 100, Trigger.FRAME_GAP),
 			stall.settings());
 		assertEquals(Cause.CLIENT_BUSY, alone.cause);
 
-		final Trace t = Trace.steady(200).usual(USUAL).frameGap(100, 600, 480).busy(100, 700).disconnect(110);
+		final Trace t = Trace.steady(200).usual(USUAL).frameGap(100, 600, 480).disconnect(110);
 		final Session s = t.build();
 		final LagEvent first = event(s, 0, 100, 100, Trigger.FRAME_GAP);
 		final LagEvent second = event(s, 1, 110, 110, Trigger.DISCONNECT);
@@ -203,14 +177,10 @@ public class VerdictNearMissTest
 
 	/** C9: under a cap of 4 frames a second a 250 ms frame is the cap, not a stall. */
 	@Test
-	public void capAtFourFpsIsF1NotS4()
+	public void capAtFourFpsIsF1NotAFreeze()
 	{
 		final SettingsView capped = VerdictCauseTest.fpsControl(4);
 		final Trace t = Trace.steady(200).usual(USUAL).fps(100, 199, 4).settings(capped);
-		for (int sec = 100; sec < 200; sec++)
-		{
-			t.busy(sec, 100);
-		}
 		final Session s = t.build();
 		assertEquals(375, capped.frameGapLimitMs(true));
 
@@ -218,18 +188,18 @@ public class VerdictNearMissTest
 		final Evidence ev = EvidenceBuilder.forEvent(s, e, capped);
 		assertEquals(250, ev.frameGapMs);
 		assertEquals(375, ev.frameLimitMs);
-		assertEquals("an idle 250 ms frame under the cap's limit", 0, Rules.S4.score(ev));
-		assertNotEquals(Cause.CLIENT_WAITING, judge.judgeEvent(s, e, capped).cause);
+		assertEquals("a 250 ms frame under the cap's limit is no freeze", 0, Rules.S3.score(ev));
+		assertNotEquals(Cause.CLIENT_BUSY, judge.judgeEvent(s, e, capped).cause);
 
 		final Verdict shown = card(s, capped, 200);
 		assertEquals(Cause.FRAME_CAP, shown.cause);
 		assertEquals("Frame rate is capped at 4", shown.headline);
 		assertEquals(Confidence.SURE, shown.confidence);
 
-		// The same frames with no cap set by the player are idle stalls.
-		final Session free = Trace.steady(200).usual(USUAL).fps(100, 199, 4).busy(150, 100).build();
+		// The same frames with no cap set by the player are a stall of the client.
+		final Session free = Trace.steady(200).usual(USUAL).fps(100, 199, 4).build();
 		final SettingsView plain = Trace.steady(1).settings();
-		assertEquals(Cause.CLIENT_WAITING, judge.judgeEvent(free, event(free, 0, 150, 150, Trigger.FRAME_GAP),
+		assertEquals(Cause.CLIENT_BUSY, judge.judgeEvent(free, event(free, 0, 150, 150, Trigger.FRAME_GAP),
 			plain).cause);
 	}
 
@@ -268,27 +238,6 @@ public class VerdictNearMissTest
 		assertEquals(Cause.PING_JUMPY, n2.verdict().cause);
 	}
 
-	/** The worked case of 6.3: a pause 119.90 - 120.05, then a busy freeze 120.50 - 120.74. */
-	@Test
-	public void aPauseBesideTheFreezeIsNotMemory()
-	{
-		final Trace t = Trace.steady(200).usual(USUAL).gcPause(119, 900, 150, 400).frameGap(120, 740, 240)
-			.busy(120, 700);
-		final Session s = t.build();
-		final LagEvent e = event(s, 0, 119, 120, Trigger.GC_PAUSE, Trigger.FRAME_GAP);
-		final Evidence ev = EvidenceBuilder.forEvent(s, e, t.settings());
-		assertEquals(240, ev.frameGapMs);
-		assertEquals("the pause did not touch the freeze", 0, ev.gcMs);
-		assertEquals(0, ev.gcOverlapMs);
-		assertEquals(0, ev.gcCoverPct);
-		assertEquals(0, Rules.G1.score(ev));
-
-		final Verdict v = judge.judgeEvent(s, e, t.settings());
-		assertEquals(Cause.CLIENT_BUSY, v.cause);
-		assertNotEquals(Cause.GC_PAUSE, v.alsoA);
-		assertEquals("A 240 ms freeze. Connection and world were fine.", v.proof);
-	}
-
 	/**
 	 * W1 needs a steady ping: a ping that doubled under the spike line is not the world's. It sent the trace to N6
 	 * before the first live look; N6 needs a real stop (NO_TICK) since, so nothing answers and the judge can't tell.
@@ -317,40 +266,21 @@ public class VerdictNearMissTest
 			calm.settings()).cause);
 	}
 
-	/** G1's frame need is GC_PAUSE_MS, not the frame limit: a 150 ms pause under a 170 ms frame is named. */
-	@Test
-	public void gcPauseUnderTheFrameLimitIsG1()
-	{
-		final Trace t = Trace.steady(200).usual(USUAL).gcPause(120, 0, 150, 400).frameGap(120, 170, 170);
-		final Session s = t.build();
-		final LagEvent e = event(s, 0, 120, 120, Trigger.GC_PAUSE);
-		final Evidence ev = EvidenceBuilder.forEvent(s, e, t.settings());
-		assertEquals(170, ev.frameGapMs);
-		assertEquals(200, ev.frameLimitMs);
-		assertEquals(150, ev.gcMs);
-		assertEquals(88, ev.gcCoverPct);
-
-		final Verdict v = judge.judgeEvent(s, e, t.settings());
-		assertEquals(Cause.GC_PAUSE, v.cause);
-		assertEquals(Confidence.SURE, v.confidence);
-		assertEquals("A 150 ms pause. Memory 400 of 768 MB.", v.proof);
-	}
-
 	/**
 	 * The GPU plugin at its defaults (GpuPluginConfig at tag runelite-parent-1.12.37: unlockFps true, vsyncMode OFF,
 	 * fpsTarget 60, drawDistance 50, MSAA_2, extended map loading 3) caps at its target of 60 by line 3 of the cap
-	 * rule, which paces by waiting, interval 16 ms (6.3's note). A 500 ms idle freeze is far past two intervals.
+	 * rule, which paces by waiting, interval 16 ms (6.3's note). A 500 ms freeze is far past two intervals.
 	 */
 	@Test
-	public void s4AtGpuDefaultsForALongIdleFreeze()
+	public void s3AtGpuDefaultsForALongFreeze()
 	{
 		final SettingsView gpu = new SettingsView(Renderer.GPU, false, false, 0, false, 0, true, "OFF", 60,
-			50, "MSAA_2", 3, 60, 768, MemorySource.MANAGEMENT, Os.WINDOWS, "");
+			50, "MSAA_2", 3, 60, Os.WINDOWS, "");
 		assertEquals(CapSource.GPU_TARGET, gpu.capSource(true));
 		assertEquals(60, gpu.capFps(true));
 		assertTrue(gpu.capSource(true).waits());
 		assertEquals(16, gpu.capIntervalMs(true));
-		final Trace t = Trace.steady(200).usual(USUAL).frameGap(120, 600, 500).busy(120, 150).settings(gpu);
+		final Trace t = Trace.steady(200).usual(USUAL).frameGap(120, 600, 500).settings(gpu);
 		final Session s = t.build();
 		final LagEvent e = event(s, 0, 120, 120, Trigger.FRAME_GAP);
 		final Evidence ev = EvidenceBuilder.forEvent(s, e, gpu);
@@ -358,32 +288,33 @@ public class VerdictNearMissTest
 		assertEquals(16, ev.capIntervalMs);
 
 		final Verdict v = judge.judgeEvent(s, e, gpu);
-		assertEquals(Cause.CLIENT_WAITING, v.cause);
+		assertEquals(Cause.CLIENT_BUSY, v.cause);
 		assertEquals(Confidence.HINT, v.confidence);
-		assertEquals("A 500 ms freeze, but the client was not busy.", v.proof);
+		assertEquals("A 500 ms freeze. Connection and world were fine.", v.proof);
+		assertEquals("Turn plugins off one at a time; try more memory for RuneLite.", v.fix);
 	}
 
-	/** Within CAP_WAIT_FACTOR cap intervals a waiting cap explains an idle gap, and S4 is barred. */
+	/** Within CAP_WAIT_FACTOR cap intervals a waiting cap explains a gap, and S3 is barred. */
 	@Test
-	public void s4IsBarredInsideTwoCapIntervals()
+	public void s3IsBarredInsideTwoCapIntervals()
 	{
 		final SettingsView capped = VerdictCauseTest.fpsControl(4);
 		assertTrue(capped.capSource(true).waits());
 		assertEquals(250, capped.capIntervalMs(true));
 
-		final Trace inside = Trace.steady(200).usual(USUAL).frameGap(120, 600, 450).busy(120, 150)
-			.settings(capped);
+		final Trace inside = Trace.steady(200).usual(USUAL).frameGap(120, 600, 450).settings(capped);
 		final Session s = inside.build();
 		final LagEvent e = event(s, 0, 120, 120, Trigger.FRAME_GAP);
 		final Evidence ev = EvidenceBuilder.forEvent(s, e, capped);
 		assertEquals("over the frame limit of 375", Evidence.YES, Rules.FRAME_OVER_LIMIT.test(ev));
-		assertEquals("and idle", Evidence.YES, Rules.IDLE.test(ev));
-		assertEquals("but inside two intervals of 250 ms", 0, Rules.S4.score(ev));
-		assertNotEquals(Cause.CLIENT_WAITING, judge.judgeEvent(s, e, capped).cause);
+		assertEquals("and the cap waits, inside two intervals of 250 ms", Evidence.YES,
+			Rules.CAP_EXPLAINS_THE_GAP.test(ev));
+		assertEquals("but inside two intervals of 250 ms", 0, Rules.S3.score(ev));
+		assertNotEquals(Cause.CLIENT_BUSY, judge.judgeEvent(s, e, capped).cause);
 
-		final Trace past = Trace.steady(200).usual(USUAL).frameGap(120, 600, 501).busy(120, 150).settings(capped);
+		final Trace past = Trace.steady(200).usual(USUAL).frameGap(120, 600, 501).settings(capped);
 		final Session ps = past.build();
-		assertEquals("past two intervals", Cause.CLIENT_WAITING,
+		assertEquals("past two intervals", Cause.CLIENT_BUSY,
 			judge.judgeEvent(ps, event(ps, 1, 120, 120, Trigger.FRAME_GAP), capped).cause);
 	}
 
@@ -412,10 +343,10 @@ public class VerdictNearMissTest
 	@Test
 	public void xNamesWhatMoved()
 	{
-		// A pause beside a 90 ms frame: G1 needs a frame of GC_PAUSE_MS, no stall rule reaches the frame limit.
-		final Trace freeze = Trace.steady(200).usual(USUAL).gcPause(120, 300, 150, 400).frameGap(120, 290, 90);
+		// A 90 ms frame: no stall rule reaches the frame limit.
+		final Trace freeze = Trace.steady(200).usual(USUAL).frameGap(120, 290, 90);
 		final Session fs = freeze.build();
-		final Verdict f = judge.judgeEvent(fs, event(fs, 0, 120, 120, Trigger.GC_PAUSE), freeze.settings());
+		final Verdict f = judge.judgeEvent(fs, event(fs, 0, 120, 120, Trigger.FRAME_GAP), freeze.settings());
 		assertCantTellNamingNothing(f);
 		assertEquals("A 90 ms freeze. Its cause was not measured.", f.proof);
 
@@ -437,10 +368,9 @@ public class VerdictNearMissTest
 		assertEquals("The connection wobbled. Cause not measured.", p.proof);
 
 		// With no fresh RTT in the span the proof says so, because it fits.
-		final Trace blind = Trace.steady(200).gcPause(120, 300, 150, 400).frameGap(120, 290, 90)
-			.rttNoData(0, 199, NoData.UNSUPPORTED);
+		final Trace blind = Trace.steady(200).frameGap(120, 290, 90).rttNoData(0, 199, NoData.UNSUPPORTED);
 		final Session bs = blind.build();
-		final Verdict b = judge.judgeEvent(bs, event(bs, 3, 120, 120, Trigger.GC_PAUSE), blind.settings());
+		final Verdict b = judge.judgeEvent(bs, event(bs, 3, 120, 120, Trigger.FRAME_GAP), blind.settings());
 		assertCantTellNamingNothing(b);
 		assertEquals("A 90 ms freeze. Its cause was not measured. No ping data.", b.proof);
 
@@ -458,7 +388,7 @@ public class VerdictNearMissTest
 	public void unfocusedUnderTheUnfocusedLimitIsF1()
 	{
 		final SettingsView settings = new SettingsView(Renderer.CPU, true, false, 0, true, 10, false, "", 0, 0, "",
-			0, 60, 768, MemorySource.MANAGEMENT, Os.WINDOWS, "");
+			0, 60, Os.WINDOWS, "");
 		final Trace t = Trace.steady(200).usual(USUAL).fps(100, 199, 10).unfocused(100, 199).settings(settings);
 		final Session s = t.build();
 		final VerdictEngine engine = new VerdictEngine();

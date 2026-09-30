@@ -9,20 +9,20 @@ import static com.whylag.ui.PanelFixtures.StubActions;
 import static com.whylag.ui.PanelFixtures.edt;
 import static com.whylag.ui.PanelFixtures.onEdt;
 import static com.whylag.ui.PanelFixtures.panel;
-import static com.whylag.ui.PanelFixtures.press;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
  * Showing and hiding (T9, T11): while hidden a show keeps the snapshot and paints nothing, and a show asks for a
  * snapshot only through {@code onActivate}; a one-second update of the same words changes no layout and repaints
- * each block once; a hide stops the timer.
+ * each block once; a hide closes the Troubleshoot window.
  */
 public class PanelActivationTest
 {
-	/** Hidden: the snapshot is kept (it is the one "Copy report" and the next activation use), nothing is painted. */
+	/** Hidden: the snapshot is kept (it is the one "Troubleshoot..." and the next activation use), nothing is painted. */
 	@Test
 	public void showWhileInactiveKeepsTheLastAndPaintsNothing()
 	{
@@ -56,7 +56,7 @@ public class PanelActivationTest
 		assertEquals(2, p.activations());
 		assertEquals("onActivate asks for one snapshot at once", 2, actions.activated);
 		assertEquals("shown again, the kept snapshot is drawn at once", "Lags (1)", p.lagsRow().words());
-		edt(() -> p.buttons().stopTimer());
+		edt(p::onDeactivate);
 	}
 
 	/** T11: a second of new numbers with the same words, rows and range: no layout, one repaint of each block. */
@@ -104,18 +104,22 @@ public class PanelActivationTest
 		}
 	}
 
-	/** A hide stops the "Copied" timer and puts the words back. */
+	/** A hide closes the Troubleshoot window, which stops its "Copied" timer; the panel holds no window after it. */
 	@Test
-	public void timersStopOnDeactivate()
+	public void theWindowAndItsTimerStopOnDeactivate()
 	{
 		final WhyLagPanel p = panel(PanelFixtures.quiet(), false);
-		p.clipboard = text -> true;
-		press(p.buttons(), 150, 14);
-		assertTrue(p.buttons().copiedTimer().isRunning());
-		assertEquals("Copied", p.buttons().copyWords());
+		assertEquals(PanelFixtures.StubActions.REPORT, onEdt(p::copyReport));
+		final TroubleshootDialog window = p.dialog();
+		assertTrue("the window stands", window.isOpen());
+		edt(window.copyButton::doClick);
+		assertTrue(window.copiedTimer.isRunning());
+		assertEquals("Copied", window.copyButton.getText());
 		edt(p::onDeactivate);
-		assertFalse(p.buttons().copiedTimer().isRunning());
-		assertEquals("Copy report", p.buttons().copyWords());
+		assertFalse("the window is closed", window.isOpen());
+		assertFalse(window.copiedTimer.isRunning());
+		assertNull("and the panel keeps none", p.dialog());
+		assertFalse(p.testTimeout().isRunning());
 	}
 
 	/** The same snapshot with the frame rate at 49 instead of 50: numbers move, no word of the card does. */
@@ -125,6 +129,6 @@ public class PanelActivationTest
 		tiles[0] = new Tile(tiles[0].lane, tiles[0].level, "49 fps", tiles[0].sub, tiles[0].noData);
 		return new PanelSnapshot(s.wallMs + 1000, s.zone, s.world, s.verdict, tiles, s.rangeMinutes,
 			s.rangeStartWallMs + 1000, s.rangeEndWallMs + 1000, s.strips, s.rangeEvents, s.sessionEvents,
-			s.sessionCounts, s.sessionTotal, s.sessionStartWallMs, s.sysCpuPct, s.gameBusyPct, s.settings, s.footer);
+			s.sessionCounts, s.sessionTotal, s.sessionStartWallMs, s.settings, s.footer);
 	}
 }

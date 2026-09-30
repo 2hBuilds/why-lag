@@ -19,16 +19,16 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
- * The badge's ten pictures (contract P2.7, T20): every file is in the jar, 24 x 24 with alpha, named by
+ * The badge's eight pictures (contract P2.7, T20): every file is in the jar, 24 x 24 with alpha, named by
  * {@link BadgeIcons#fileName}; the corner carries the state's shape; the globe keeps its natural colours while the
- * other four are tinted; the corners are clear; OK, NO_DATA and NONE have no picture; and the ten are loaded once,
+ * other three are tinted; the corners are clear; OK, NO_DATA and NONE have no picture; and the eight are loaded once,
  * in the constructor, so {@link BadgeIcons#get} answers the same object every time. The pixels are those of
  * {@code whylag_icons.py} (its {@code --check} proves the files match the maps).
  */
 public class BadgeIconsTest
 {
-	/** The five causes that have a picture, and the two states. */
-	private static final Icon[] PICTURED = {Icon.WORLD, Icon.LINE, Icon.PC, Icon.MEMORY, Icon.UNKNOWN};
+	/** The four causes that have a picture, and the two states. */
+	private static final Icon[] PICTURED = {Icon.WORLD, Icon.LINE, Icon.PC, Icon.UNKNOWN};
 	private static final Level[] STATES = {Level.WARN, Level.BAD};
 
 	private static final int BAD_S = 0xFFE61E1E;      // 230,30,30: the red square's face
@@ -55,7 +55,7 @@ public class BadgeIconsTest
 		}
 		assertEquals(new TreeSet<>(Arrays.asList(
 			"badge-world-warn.png", "badge-world-bad.png", "badge-line-warn.png", "badge-line-bad.png",
-			"badge-pc-warn.png", "badge-pc-bad.png", "badge-memory-warn.png", "badge-memory-bad.png",
+			"badge-pc-warn.png", "badge-pc-bad.png",
 			"badge-unknown-warn.png", "badge-unknown-bad.png")), names);
 
 		final BadgeIcons icons = new BadgeIcons();
@@ -117,7 +117,7 @@ public class BadgeIconsTest
 		final BadgeIcons icons = new BadgeIcons();
 		assertEquals("the monitor's screen, warn", WARN_S, icons.get(Icon.PC, Level.WARN).getRGB(10, 8));
 		assertEquals("the monitor's screen, bad", BAD_S, icons.get(Icon.PC, Level.BAD).getRGB(10, 8));
-		for (Icon icon : new Icon[] {Icon.LINE, Icon.PC, Icon.MEMORY, Icon.UNKNOWN})
+		for (Icon icon : new Icon[] {Icon.LINE, Icon.PC, Icon.UNKNOWN})
 		{
 			assertTrue(icon + " is tinted by the state outside its corner",
 				differsOutsideTheCorner(icons.get(icon, Level.WARN), icons.get(icon, Level.BAD)));
@@ -160,7 +160,7 @@ public class BadgeIconsTest
 		assertEquals("badge-unknown-warn.png", BadgeIcons.fileName(Icon.UNKNOWN, Level.WARN));
 	}
 
-	/** T20: the ten files are loaded once, in the constructor; {@code get} loads nothing and answers one object. */
+	/** T20: the eight files are loaded once, in the constructor; {@code get} loads nothing and answers one object. */
 	@Test
 	public void loadsEveryFileOnce()
 	{
@@ -170,7 +170,7 @@ public class BadgeIconsTest
 			loads.merge(name, 1, Integer::sum);
 			return new BufferedImage(24, 24, BufferedImage.TYPE_INT_ARGB);
 		});
-		assertEquals("ten files", 10, loads.size());
+		assertEquals("eight files", 8, loads.size());
 		for (Map.Entry<String, Integer> e : loads.entrySet())
 		{
 			assertEquals(e.getKey() + " is loaded once", 1, (int) e.getValue());
@@ -187,7 +187,7 @@ public class BadgeIconsTest
 			}
 			assertSame(first, counted.get(Icon.WORLD, Level.BAD));
 		}
-		assertEquals("get loads nothing", 10, loads.values().stream().mapToInt(Integer::intValue).sum());
+		assertEquals("get loads nothing", 8, loads.values().stream().mapToInt(Integer::intValue).sum());
 
 		final BadgeIcons real = new BadgeIcons();
 		for (Icon icon : PICTURED)
