@@ -1,0 +1,246 @@
+package com.whylag;
+
+import com.whylag.core.Answer;
+import com.whylag.core.BadgeStyle;
+import com.whylag.core.BadgeView;
+import com.whylag.core.Cause;
+import com.whylag.core.Level;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import javax.imageio.ImageIO;
+import net.runelite.client.ui.FontManager;
+import org.junit.Test;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
+/**
+ * Pictures for the checker's eye (contract P2.3, section 8): every state of picture 22, part A - smooth, world lag,
+ * ping lag, low FPS, memory stall (the picture's "Memory pause", slow: a triangle), not sure, measuring - and the
+ * dimmed world lag, in each of the four styles, each on a dark green ground, to
+ * {@code build/whylag/badge-<style>-<state>.png}, and ONE sheet of them all, {@code build/whylag/badge-sheet.png}.
+ * The files are checked to exist and not to be blank.
+ *
+ * <p>The folder is SHARED with the panel's {@code PanelStatesRenderTest}: this test makes it when it is missing,
+ * names every file it writes {@code badge-...}, writes and replaces only those, and deletes nothing there;
+ * {@code gradlew clean} drops old pictures.
+ *
+ * <p>Choice: the ground is 38,58,30 with 6 px round each badge; the sheet: styles as columns, states as rows.
+ * <p>Choice: a file is badge-{style}-{state}.png, both in lower case with dashes: badge-icon-and-words-world-lag.png.
+ * <p>Choice: the memory row is WARN with "Memory stall", as picture 22's row 5 ("slow, not lag: triangle").
+ */
+public class BadgeRenderTest
+{
+	private static final Color GRASS = new Color(38, 58, 30);
+	private static final int MARGIN = 6;
+	private static final String[] STYLE_NAMES = {"icon", "icon-and-words", "shape-and-words", "shape-only"};
+
+	/** One row of picture 22, part A (and the dimmed lag of part D). */
+	private static final class State
+	{
+		final String name;
+		final Level level;
+		final Answer answer;
+		final boolean dimmed;
+		final String tip1;
+		final String tip2;
+
+		State(String name, Level level, Answer answer, boolean dimmed, String tip1, String tip2)
+		{
+			this.name = name;
+			this.level = level;
+			this.answer = answer;
+			this.dimmed = dimmed;
+			this.tip1 = tip1;
+			this.tip2 = tip2;
+		}
+
+		BadgeView view(BadgeStyle style)
+		{
+			return new BadgeView(true, style, level, answer.icon, dimmed, answer.line1, answer.line2, tip1, tip2);
+		}
+	}
+
+	private static List<State> states()
+	{
+		final List<State> out = new ArrayList<>();
+		out.add(new State("smooth", Level.OK, Answer.SMOOTH, false, "Smooth. No lag for 4 min.", ""));
+		final Answer world = Answer.of(Cause.SLOW_WORLD);
+		out.add(new State("world-lag", Level.BAD, world, false, world.oneLine, "Ticks 1,240 ms, ping 41 ms"));
+		final Answer ping = Answer.of(Cause.PING_JUMPY);
+		out.add(new State("ping-lag", Level.BAD, ping, false, ping.oneLine, "Ping 310 ms, ticks 1,240 ms"));
+		final Answer fps = Answer.of(Cause.SLOW_DRAWING);
+		out.add(new State("low-fps", Level.BAD, fps, false, fps.oneLine, "Worst frame 480 ms, 50 fps"));
+		final Answer memory = Answer.of(Cause.GC_PAUSE);
+		out.add(new State("memory-stall", Level.WARN, memory, false, memory.oneLine, "Pause 340 ms, memory 742 MB"));
+		final Answer lag = Answer.of(Cause.NOT_SURE);
+		out.add(new State("not-sure", Level.BAD, lag, false, lag.oneLine, "Ticks 1,240 ms, worst frame 170 ms"));
+		out.add(new State("measuring", Level.NO_DATA, Answer.MEASURING, false, "Still measuring", "Ready in 40 s."));
+		out.add(new State("world-lag-dimmed", Level.BAD, world, true, world.oneLine, "Ticks 1,240 ms, ping 41 ms"));
+		return out;
+	}
+
+	@Test
+	public void paintsEveryStateInEveryStyle() throws IOException
+	{
+		final File dir = outputDir();
+		assertTrue("build/whylag is made when missing", dir.isDirectory() || dir.mkdirs());
+		final BadgePainter painter = new BadgePainter(new BadgeIcons());
+		final List<State> states = states();
+		final BadgeStyle[] styles = BadgeStyle.values();
+		final BufferedImage[][] badges = new BufferedImage[states.size()][styles.length];
+		final List<File> written = new ArrayList<>();
+
+		for (int r = 0; r < states.size(); r++)
+		{
+			for (int c = 0; c < styles.length; c++)
+			{
+				final BufferedImage badge = painter.paint(states.get(r).view(styles[c]));
+				assertNotNull(badge);
+				badges[r][c] = badge;
+				final BufferedImage onGrass = new BufferedImage(badge.getWidth() + 2 * MARGIN,
+					badge.getHeight() + 2 * MARGIN, BufferedImage.TYPE_INT_ARGB);
+				final Graphics2D g = onGrass.createGraphics();
+				g.setColor(GRASS);
+				g.fillRect(0, 0, onGrass.getWidth(), onGrass.getHeight());
+				g.drawImage(badge, MARGIN, MARGIN, null);
+				g.dispose();
+				final File file = new File(dir, "badge-" + STYLE_NAMES[c] + "-" + states.get(r).name + ".png");
+				assertTrue(ImageIO.write(onGrass, "png", file));
+				written.add(file);
+			}
+		}
+
+		final File sheet = new File(dir, "badge-sheet.png");
+		assertTrue(ImageIO.write(sheet(states, styles, badges), "png", sheet));
+		written.add(sheet);
+
+		assertEquals("8 states x 4 styles, and the sheet", 33, written.size());
+		for (File file : written)
+		{
+			assertTrue(file.getName().startsWith("badge-"));
+			assertTrue(file + " exists", file.isFile());
+			assertTrue(file + " is not empty", file.length() > 0);
+			final BufferedImage back = ImageIO.read(file);
+			assertNotNull(file + " reads back", back);
+			assertTrue(file + " is not blank", distinctColours(back) >= 3);
+			assertEquals(file + ": the grass in the corner", GRASS.getRGB(), back.getRGB(0, 0));
+		}
+		for (int r = 0; r < states.size(); r++)
+		{
+			for (int c = 0; c < styles.length; c++)
+			{
+				final File file = written.get(r * styles.length + c);
+				final BufferedImage back = ImageIO.read(file);
+				assertEquals(file + ": the badge and the grass round it", badges[r][c].getWidth() + 2 * MARGIN,
+					back.getWidth());
+				assertEquals(badges[r][c].getHeight() + 2 * MARGIN, back.getHeight());
+				assertTrue(file + ": the badge's box is on the grass", back.getRGB(MARGIN, MARGIN) != GRASS.getRGB());
+			}
+		}
+	}
+
+	/** The styles as columns, the states as rows, every badge on the grass with its state's name beside it. */
+	private static BufferedImage sheet(List<State> states, BadgeStyle[] styles, BufferedImage[][] badges)
+	{
+		final int labelWidth = 120;
+		final int headerHeight = 22;
+		final int[] columnWidth = new int[styles.length];
+		final int[] rowHeight = new int[states.size()];
+		final Graphics2D scratch = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).createGraphics();
+		final java.awt.FontMetrics small = scratch.getFontMetrics(FontManager.getRunescapeSmallFont());
+		for (int c = 0; c < styles.length; c++)
+		{
+			columnWidth[c] = small.stringWidth(styles[c].toString()) + 2 * MARGIN;
+		}
+		scratch.dispose();
+		for (int r = 0; r < states.size(); r++)
+		{
+			for (int c = 0; c < styles.length; c++)
+			{
+				columnWidth[c] = Math.max(columnWidth[c], badges[r][c].getWidth() + 2 * MARGIN);
+				rowHeight[r] = Math.max(rowHeight[r], badges[r][c].getHeight() + 2 * MARGIN);
+			}
+		}
+		int width = labelWidth;
+		for (int w : columnWidth)
+		{
+			width += w;
+		}
+		int height = headerHeight;
+		for (int h : rowHeight)
+		{
+			height += h;
+		}
+		final BufferedImage out = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = out.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_OFF);
+		g.setColor(GRASS);
+		g.fillRect(0, 0, width, height);
+		g.setFont(FontManager.getRunescapeSmallFont());
+		int x = labelWidth;
+		for (int c = 0; c < styles.length; c++)
+		{
+			label(g, styles[c].toString(), x + MARGIN, 16);
+			x += columnWidth[c];
+		}
+		int y = headerHeight;
+		for (int r = 0; r < states.size(); r++)
+		{
+			label(g, states.get(r).name, MARGIN, y + rowHeight[r] / 2 + 5);
+			x = labelWidth;
+			for (int c = 0; c < styles.length; c++)
+			{
+				g.drawImage(badges[r][c], x + MARGIN, y + MARGIN, null);
+				x += columnWidth[c];
+			}
+			y += rowHeight[r];
+		}
+		g.dispose();
+		return out;
+	}
+
+	private static void label(Graphics2D g, String text, int x, int y)
+	{
+		g.setColor(Color.BLACK);
+		g.drawString(text, x + 1, y + 1);
+		g.setColor(Color.WHITE);
+		g.drawString(text, x, y);
+	}
+
+	private static int distinctColours(BufferedImage img)
+	{
+		final Set<Integer> seen = new HashSet<>();
+		for (int y = 0; y < img.getHeight(); y++)
+		{
+			for (int x = 0; x < img.getWidth(); x++)
+			{
+				seen.add(img.getRGB(x, y));
+			}
+		}
+		return seen.size();
+	}
+
+	/** {@code build/whylag} of the project: found above the working directory by its {@code build.gradle}. */
+	private static File outputDir()
+	{
+		File dir = new File("").getAbsoluteFile();
+		for (File d = dir; d != null; d = d.getParentFile())
+		{
+			if (new File(d, "build.gradle").isFile() && new File(d, "src").isDirectory())
+			{
+				dir = d;
+				break;
+			}
+		}
+		return new File(new File(dir, "build"), "whylag");
+	}
+}
