@@ -46,7 +46,7 @@ public class ContrastTest
 						final double ratio = contrast(d.seen(), d.ground);
 						if (ratio < 4.5)
 						{
-							failures.add(f + (open ? " open " : " folded ") + block.getClass().getSimpleName() + ": "
+							failures.add(f + (open ? " open " : " folded ") + PanelFixtures.label(block) + ": "
 								+ d + " " + d.seen() + " on " + d.ground + " = " + String.format("%.2f", ratio));
 						}
 					}
@@ -102,7 +102,7 @@ public class ContrastTest
 			{
 				for (Drawn d : record(block))
 				{
-					assertFalse(f + " " + block.getClass().getSimpleName() + ": " + d,
+					assertFalse(f + " " + PanelFixtures.label(block) + ": " + d,
 						(d.colour.getRGB() & 0xFFFFFF) == (STOCK_RED.getRGB() & 0xFFFFFF));
 					red += (d.colour.getRGB() & 0xFFFFFF) == (Ui.BAD_TEXT.getRGB() & 0xFFFFFF) ? 1 : 0;
 				}

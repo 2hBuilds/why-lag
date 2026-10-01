@@ -65,7 +65,7 @@ public class PanelFillTest
 						continue;
 					}
 					seen++;
-					final String where = f + " at " + c[0] + ", " + block.getClass().getSimpleName();
+					final String where = f + " at " + c[0] + ", " + PanelFixtures.label(block);
 					assertEquals(where, 6, block.getX());
 					assertEquals(where, c[1], block.getWidth());
 					assertEquals(where + ": the preferred width stays 213", 213, block.getPreferredSize().width);
@@ -90,7 +90,7 @@ public class PanelFillTest
 				layOutAt(p, panelWidth);
 				for (JComponent block : PanelFixtures.blocks(p))
 				{
-					final String where = f + " at " + panelWidth + ", " + block.getClass().getSimpleName();
+					final String where = f + " at " + panelWidth + ", " + PanelFixtures.label(block);
 					final int w = block.getWidth();
 					final BufferedImage img = paintAsLaidOut(block, 40);
 					int painted = 0;

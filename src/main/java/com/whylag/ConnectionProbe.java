@@ -17,8 +17,8 @@ import net.runelite.client.plugins.worldhopper.ping.TCPInfo;
  * <li>no socket (a null descriptor): {@link NoData#NOT_CONNECTED};</li>
  * <li>no {@code TCPInfo} (Ping answers null on this system), or a {@code LinkageError} anywhere:
  * {@link NoData#UNSUPPORTED}, "Not on this PC";</li>
- * <li>any other exception, a {@code RuntimeException} above all (without {@code --add-opens} Ping's reflection throws
- * one on JDK 17): {@link NoData#ERROR}, "Could not read it";</li>
+ * <li>any other exception, a {@code RuntimeException} above all (without {@code --add-opens} Ping cannot read the
+ * socket's descriptor and throws one on JDK 17): {@link NoData#ERROR}, "Could not read it";</li>
  * <li>else {@link NoData#NONE} with the socket's three numbers.</li>
  * </ul>
  * It never throws (T13).

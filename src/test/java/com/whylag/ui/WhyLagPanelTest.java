@@ -103,7 +103,7 @@ public class WhyLagPanelTest
 		assertEquals("blocks in the layout", ys.length, blocks.size());
 		for (int i = 0; i < ys.length; i++)
 		{
-			assertEquals(blocks.get(i).getClass().getSimpleName(), ys[i], yOf(p, blocks.get(i)));
+			assertEquals(PanelFixtures.label(blocks.get(i)), ys[i], yOf(p, blocks.get(i)));
 		}
 	}
 
@@ -147,9 +147,9 @@ public class WhyLagPanelTest
 			assertEquals(225, p.getPreferredSize().width);
 			for (JComponent block : PanelFixtures.blocks(p))
 			{
-				assertEquals(block.getClass().getSimpleName(), 6, block.getX());
-				assertEquals(block.getClass().getSimpleName(), 213, block.getWidth());
-				assertEquals(block.getClass().getSimpleName(), 213, block.getPreferredSize().width);
+				assertEquals(PanelFixtures.label(block), 6, block.getX());
+				assertEquals(PanelFixtures.label(block), 213, block.getWidth());
+				assertEquals(PanelFixtures.label(block), 213, block.getPreferredSize().width);
 			}
 		}
 	}
@@ -278,7 +278,7 @@ public class WhyLagPanelTest
 	/**
 	 * The sidebar icon (the user's pick of 2026-09-29, picture 29 R1 with the bars 25 % smaller): 16 x 16, the 9 px
 	 * "2h" coin in the top-left corner and four bars in the bottom-right, on a clear ground, the two never touching.
-	 * It also writes the icon enlarged 8x to build/whylag/nav-icon-8x.png for the lead to look at.
+	 * The icon enlarged 8x ({@link #navIcon8x()}) is what the probe's {@code PicturesTest} writes for the lead.
 	 */
 	@Test
 	public void theNavigationIconIsTheCoinAndTheBars() throws Exception
@@ -334,6 +334,19 @@ public class WhyLagPanelTest
 		assertEquals("the bottom-left corner is clear", 0, icon.getRGB(0, 15) >>> 24);
 		assertTrue("a new image on every call", icon != NavIcon.create());
 
+		final BufferedImage big = navIcon8x();
+		assertEquals(128, big.getWidth());
+		assertEquals(128, big.getHeight());
+		assertEquals("the clear top-right corner shows the dark ground", 0xFF1E1E1E, big.getRGB(127, 0));
+	}
+
+	/**
+	 * The sidebar icon enlarged 8x on a dark ground, nearest neighbour, for the lead to look at: the probe's
+	 * {@code PicturesTest} writes it as {@code nav-icon-8x}.
+	 */
+	public static BufferedImage navIcon8x()
+	{
+		final BufferedImage icon = NavIcon.create();
 		final BufferedImage big = new BufferedImage(128, 128, BufferedImage.TYPE_INT_ARGB);
 		final java.awt.Graphics2D g = big.createGraphics();
 		g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
@@ -342,9 +355,7 @@ public class WhyLagPanelTest
 		g.fillRect(0, 0, 128, 128);
 		g.drawImage(icon, 0, 0, 128, 128, null);
 		g.dispose();
-		final java.io.File out = new java.io.File("build/whylag/nav-icon-8x.png");
-		out.getParentFile().mkdirs();
-		javax.imageio.ImageIO.write(big, "png", out);
+		return big;
 	}
 
 	// ------------------------------------------------------------------ the gear's menu (1.0.1, lot C)

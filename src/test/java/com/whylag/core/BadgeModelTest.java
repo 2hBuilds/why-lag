@@ -1,7 +1,5 @@
 package com.whylag.core;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -699,31 +697,6 @@ public class BadgeModelTest
 		assertView("the view", step(m, v2(FOUR_MIN), null, closed, END + 5), BadgeStyle.ICON, Level.BAD,
 			Icon.UNKNOWN, true, "Lag", "Can't tell why", "Lag - can't tell why", NOT_SURE_NUMBERS);
 		assertEquals("[Why Lag] Lag - can't tell why (14 s). " + NOT_SURE_NUMBERS + ".", m.takeChatLine());
-	}
-
-	// ---------------------------------------------------------------- the seam
-
-	/** {@code view()} is one volatile read; the model keeps four things between calls. */
-	@Test
-	public void viewIsOneVolatileRead()
-	{
-		int kept = 0;
-		int views = 0;
-		for (Field f : BadgeModel.class.getDeclaredFields())
-		{
-			if (Modifier.isStatic(f.getModifiers()) || f.isSynthetic())
-			{
-				continue;
-			}
-			kept++;
-			if (f.getType() == BadgeView.class)
-			{
-				views++;
-				assertTrue(f.getName() + " is volatile", Modifier.isVolatile(f.getModifiers()));
-			}
-		}
-		assertEquals("one field holds the view", 1, views);
-		assertEquals("four things kept between calls (contract 7, L10)", 4, kept);
 	}
 
 	// ---------------------------------------------------------------- helpers

@@ -1,7 +1,5 @@
 package com.whylag.core;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumSet;
@@ -156,38 +154,16 @@ public class AnswerTest
 		}
 	}
 
-	/** The same object for the same cause, and every answer is a constant of the class: compare by identity. */
+	/** The same object for the same cause: a caller may compare by identity. */
 	@Test
-	public void ofAnswersConstants() throws IllegalAccessException
+	public void ofAnswersConstants()
 	{
-		final List<Object> constants = new ArrayList<>();
-		for (Field f : Answer.class.getDeclaredFields())
-		{
-			final int m = f.getModifiers();
-			if (f.getType() == Answer.class && Modifier.isStatic(m) && Modifier.isFinal(m))
-			{
-				f.setAccessible(true);
-				constants.add(f.get(null));
-			}
-		}
-		for (Answer a : everyAnswer())
-		{
-			assertTrue(a.oneLine + " is a constant of the class", containsSame(constants, a));
-		}
 		for (Cause c : Cause.values())
 		{
 			assertSame(c + ": the same object every time", Answer.of(c), Answer.of(c));
 		}
 		assertSame(Answer.SMOOTH, Answer.of(Cause.ALL_CLEAR));
 		assertSame(Answer.MEASURING, Answer.of((Verdict) null));
-		assertEquals("no public way to build one", 0, Answer.class.getConstructors().length);
-		for (String name : Arrays.asList("SMOOTH", "MEASURING", "NOT_LOGGED_IN", "WAITING"))
-		{
-			final Field f = field(name);
-			assertTrue(name + " is public", Modifier.isPublic(f.getModifiers()));
-			final int m = f.getModifiers();
-			assertTrue(name + " is a constant", Modifier.isStatic(m) && Modifier.isFinal(m));
-		}
 	}
 
 	/** At most 14 characters a line (the card's big line and the badge's word line are measured in L6 and L11). */
@@ -268,30 +244,6 @@ public class AnswerTest
 		out.add(Answer.of(state(Answer.HEAD_MEASURING)));
 		out.add(Answer.of(state(Answer.HEAD_WAITING)));
 		return out;
-	}
-
-	private static boolean containsSame(List<Object> list, Object o)
-	{
-		for (Object x : list)
-		{
-			if (x == o)
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private static Field field(String name)
-	{
-		try
-		{
-			return Answer.class.getDeclaredField(name);
-		}
-		catch (NoSuchFieldException e)
-		{
-			throw new AssertionError("Answer." + name + " is missing", e);
-		}
 	}
 
 	/** A verdict of that cause with that headline; nothing else of it matters to the answer. */

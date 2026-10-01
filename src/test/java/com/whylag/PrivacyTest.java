@@ -36,7 +36,6 @@ import net.runelite.api.events.GameTick;
 import net.runelite.api.events.WorldChanged;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
-import static com.whylag.WhyLagWiringTest.field;
 import static com.whylag.WhyLagWiringTest.gameState;
 import static com.whylag.WhyLagWiringTest.onEdt;
 import static com.whylag.WhyLagWiringTest.onSamplerThread;
@@ -184,7 +183,7 @@ public class PrivacyTest
 		// ... and the same through the button: the checks run on the sampler thread, the report comes back whole.
 		final List<Report> got = new ArrayList<>();
 		f.posted.clear();
-		((PanelActions) field(f.plugin, "actions")).testAndReport(s, got::add);
+		f.plugin.actions.testAndReport(s, got::add);
 		final ArgumentCaptor<Runnable> task = ArgumentCaptor.forClass(Runnable.class);
 		verify(f.executor).execute(task.capture());
 		onSamplerThread(task.getValue());

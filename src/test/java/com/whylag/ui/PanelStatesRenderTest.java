@@ -3,15 +3,10 @@ package com.whylag.ui;
 import com.whylag.GraphRange;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
-import javax.imageio.ImageIO;
 import javax.swing.JComponent;
 import org.junit.Test;
 import static com.whylag.ui.PanelFixtures.Fixture;
@@ -20,30 +15,28 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Pictures for the checker's eye (contract 7, L6; 8): every fixture painted FOLDED and OPENED to
- * {@code build/whylag/panel-<state>-folded.png} and {@code panel-<state>-open.png}, each with a greyscale copy
- * ({@code ...-grey.png}), plus the panel before its first snapshot; the three frames of picture 18 are among them
- * ({@code panel-quiet-folded}, {@code panel-lag-folded}, {@code panel-lag-open}). The files are read back: each
- * exists, has the panel's size and is not blank.
- *
- * <p><b>The folder is shared</b> with the badge's render test: this test makes {@code build/whylag/} when it is
- * missing, names every file it writes {@code panel-...}, replaces only those, and deletes nothing.
+ * Pictures for the checker's eye (contract 7, L6; 8): every fixture painted FOLDED and OPENED as
+ * {@code panel-<state>-folded} and {@code panel-<state>-open}, each with a greyscale copy ({@code ...-grey}), plus
+ * the panel before its first snapshot; the three frames of picture 18 are among them ({@code panel-quiet-folded},
+ * {@code panel-lag-folded}, {@code panel-lag-open}). Each is checked in memory: it has the panel's size and is not
+ * blank. The local-only probe's {@code PicturesTest} writes them to {@code build/whylag/<name>.png}.
  */
 public class PanelStatesRenderTest
 {
-	@Test
-	public void everyStateIsPaintedFoldedAndOpened() throws IOException
+	/**
+	 * The pictures of the first test, by file name without the extension: every fixture folded and open, each with its
+	 * greyscale copy ({@code ...-grey}), and the panel before its first snapshot. The probe's {@code PicturesTest}
+	 * writes them to {@code build/whylag/<name>.png}.
+	 */
+	public static Map<String, BufferedImage> pictures()
 	{
-		final Path dir = PanelFixtures.projectRoot().resolve("build").resolve("whylag");
-		Files.createDirectories(dir);
-		final List<String> written = new ArrayList<>();
+		final Map<String, BufferedImage> out = new LinkedHashMap<>();
 		for (Fixture f : PanelFixtures.all())
 		{
 			for (boolean open : new boolean[] {false, true})
 			{
 				final WhyLagPanel p = PanelFixtures.panel(f, open);
-				written.addAll(write(dir, "panel-" + f.name + (open ? "-open" : "-folded"),
-					PanelFixtures.paintPanel(f, p)));
+				withGrey(out, "panel-" + f.name + (open ? "-open" : "-folded"), PanelFixtures.paintPanel(f, p));
 			}
 		}
 		final WhyLagPanel first = PanelFixtures.onEdt(() ->
@@ -52,19 +45,25 @@ public class PanelStatesRenderTest
 			p.onActivate();
 			return p;
 		});
-		written.addAll(write(dir, "panel-first-folded", PanelFixtures.paintPanel(first)));
+		withGrey(out, "panel-first-folded", PanelFixtures.paintPanel(first));
+		return out;
+	}
+
+	@Test
+	public void everyStateIsPaintedFoldedAndOpened()
+	{
+		final Map<String, BufferedImage> written = pictures();
 
 		for (String name : new String[] {"panel-quiet-folded", "panel-lag-folded", "panel-lag-open"})
 		{
-			assertTrue("a frame of picture 18: " + name, written.contains(name + ".png"));
-			assertTrue(written.contains(name + "-grey.png"));
+			assertTrue("a frame of picture 18: " + name, written.containsKey(name));
+			assertTrue(written.containsKey(name + "-grey"));
 		}
-		for (String name : written)
+		for (Map.Entry<String, BufferedImage> e : written.entrySet())
 		{
-			assertTrue("every file this test writes is a panel-... file: " + name, name.startsWith("panel-"));
-			final File file = dir.resolve(name).toFile();
-			assertTrue("written: " + file, file.isFile());
-			final BufferedImage back = ImageIO.read(file);
+			final String name = e.getKey();
+			final BufferedImage back = e.getValue();
+			assertTrue("every picture this test makes is a panel-... one: " + name, name.startsWith("panel-"));
 			assertEquals(name, 225, back.getWidth());
 			// (the panel before its first snapshot is 285 high since the button went, 1.0.1, lot C)
 			assertTrue(name, back.getHeight() > 250);
@@ -76,23 +75,30 @@ public class PanelStatesRenderTest
 
 	/**
 	 * The panel as the client shows it: 242 wide (the sidebar's 225 and the 17 px RuneLite keeps for a scroll bar), so
-	 * the blocks are 230 wide, 6 px in from each edge. The quiet and the lag state, both folds open, are written to
-	 * {@code build/whylag/panel-quiet-242.png} and {@code panel-lag-242.png} for the eye, and read back.
+	 * the blocks are 230 wide, 6 px in from each edge: the quiet and the lag state, both folds open, as
+	 * {@code panel-quiet-242} and {@code panel-lag-242}, for the eye (the probe's {@code PicturesTest} writes them).
 	 */
-	@Test
-	public void theWidePanelIsPaintedAt242() throws IOException
+	public static Map<String, BufferedImage> widePictures()
 	{
-		final Path dir = PanelFixtures.projectRoot().resolve("build").resolve("whylag");
-		Files.createDirectories(dir);
+		final Map<String, BufferedImage> out = new LinkedHashMap<>();
 		for (Fixture f : new Fixture[] {PanelFixtures.quiet(), PanelFixtures.lag()})
 		{
-			final BufferedImage img = PanelFixtures.paintPanelAt(PanelFixtures.panel(f, true), 242);
-			final File file = dir.resolve("panel-" + f.name + "-242.png").toFile();
-			assertTrue("wrote " + file, ImageIO.write(img, "png", file));
-			final BufferedImage back = ImageIO.read(file);
-			assertEquals(f.name, 242, back.getWidth());
-			assertTrue(f.name, back.getHeight() > 300);
-			assertTrue(f.name + " is not blank", colours(back) > 8);
+			out.put("panel-" + f.name + "-242", PanelFixtures.paintPanelAt(PanelFixtures.panel(f, true), 242));
+		}
+		return out;
+	}
+
+	@Test
+	public void theWidePanelIsPaintedAt242()
+	{
+		final Map<String, BufferedImage> wide = widePictures();
+		assertEquals(2, wide.size());
+		for (Map.Entry<String, BufferedImage> e : wide.entrySet())
+		{
+			final BufferedImage img = e.getValue();
+			assertEquals(e.getKey(), 242, img.getWidth());
+			assertTrue(e.getKey(), img.getHeight() > 300);
+			assertTrue(e.getKey() + " is not blank", colours(img) > 8);
 		}
 	}
 
@@ -196,8 +202,8 @@ public class PanelStatesRenderTest
 		return false;
 	}
 
-	/** Writes the picture and its greyscale copy; answers the two file names. */
-	private static List<String> write(Path dir, String name, BufferedImage img) throws IOException
+	/** Adds the picture and its greyscale copy ({@code name + "-grey"}). */
+	private static void withGrey(Map<String, BufferedImage> out, String name, BufferedImage img)
 	{
 		final BufferedImage grey = new BufferedImage(img.getWidth(), img.getHeight(), BufferedImage.TYPE_BYTE_GRAY);
 		final Graphics2D g = grey.createGraphics();
@@ -209,14 +215,8 @@ public class PanelStatesRenderTest
 		{
 			g.dispose();
 		}
-		final List<String> names = new ArrayList<>();
-		for (String file : new String[] {name + ".png", name + "-grey.png"})
-		{
-			assertTrue("wrote " + file, ImageIO.write(file.endsWith("-grey.png") ? grey : img, "png",
-				dir.resolve(file).toFile()));
-			names.add(file);
-		}
-		return names;
+		out.put(name, img);
+		out.put(name + "-grey", grey);
 	}
 
 	private static int colours(BufferedImage img)

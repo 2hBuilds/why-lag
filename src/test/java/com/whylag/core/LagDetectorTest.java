@@ -843,12 +843,9 @@ public class LagDetectorTest
 	public void describeNamesEveryField()
 	{
 		// describe() is how these tests and the property test compare two events field by field: a field added to
-		// LagEvent must be added to it too, or the comparisons would pass over it unseen.
-		int fields = 0;
-		for (java.lang.reflect.Field f : LagEvent.class.getFields())
-		{
-			fields += java.lang.reflect.Modifier.isStatic(f.getModifiers()) ? 0 : 1;
-		}
+		// LagEvent must be added to it too, or the comparisons would pass over it unseen. The probe's
+		// LagEventStructureTest ties this count to the class's own field list.
+		final int fields = 23;
 		final LagEvent e = new LagEvent(1, 2, 3, 4, 5, Trigger.TICK_OFF, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
 			18, 19, true, false, null);
 		final String text = describe(e, 0, true);

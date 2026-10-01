@@ -1,102 +1,16 @@
 package com.whylag.core;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.TreeSet;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertTrue;
 
 /**
  * Pins the starting value of every threshold (contract 3.1) by literal, so a change to one is a deliberate edit
- * here too, and proves every field is a {@code public static final} constant. A constant added without a pin fails
- * {@link #everyConstantIsPinned()}. The thresholds of the memory pauses, the heap, the busy share and the CPU are
- * gone with those readings (1.0.0, the Hub's rule): none of their names is a constant any more.
+ * here too. That every field is a {@code public static final} constant, and that a constant added without a pin
+ * fails, is the probe's {@code ThresholdsStructureTest}. The thresholds of the memory pauses, the heap, the busy
+ * share and the CPU are gone with those readings (1.0.0, the Hub's rule): none of their names is a constant any more.
  */
 public class ThresholdsTest
 {
-	private static final Map<String, Object> PINNED = new LinkedHashMap<>();
-
-	static
-	{
-		PINNED.put("SECONDS", 3600);
-		PINNED.put("TICKS", 6000);
-		PINNED.put("EVENTS", 500);
-		PINNED.put("TICK_MS", 600);
-		PINNED.put("WARMUP_S", 0);
-		PINNED.put("WINDOW_S", 60);
-		PINNED.put("NO_FRAMES_MS", 2000);
-		PINNED.put("CLIENT_CAP_FPS", 50);
-		PINNED.put("SCENE_EVERY_TICKS", 5);
-		PINNED.put("USUAL_MIN_SAMPLES", 30);
-		PINNED.put("SLOW_FRAME_MS", 50);
-		PINNED.put("FRAME_GAP_MS", 200);
-		PINNED.put("FRAME_GAP_CAP_PCT", 150);
-		PINNED.put("FRAME_CLEAN_MS", 100);
-		PINNED.put("LOW_FPS_FRAME_MS", 25);
-		PINNED.put("FPS_WARN", 40);
-		PINNED.put("FPS_BAD", 25);
-		PINNED.put("CAP_MATCH_FPS", 2);
-		PINNED.put("TICK_OFF_MS", 250);
-		PINNED.put("TICK_WARN_MS", 200);
-		PINNED.put("TICK_BAD_MS", 400);
-		PINNED.put("TICK_TRIM_MS", 900);
-		PINNED.put("NO_TICK_MS", 1200);
-		PINNED.put("SLOW_WORLD_MIN_TICKS", 5);
-		PINNED.put("SLOW_WORLD_MEDIAN_MS", 660);
-		PINNED.put("SLOW_WORLD_WINDOW_MS", 620);
-		PINNED.put("SLOW_WORLD_WINDOW_TICKS", 60);
-		PINNED.put("SLOW_WORLD_PING_MS", 20);
-		PINNED.put("SLOW_WORLD_LONG_S", 10);
-		PINNED.put("LOGIN_MASK_TICKS", 15);
-		PINNED.put("LOAD_TAIL_S", 1);
-		PINNED.put("D1_LOOK_S", 10);
-		PINNED.put("CAP_WAIT_FACTOR", 2);
-		PINNED.put("TEXT_STEP_S", 10);
-		PINNED.put("REFRESH_REREAD_S", 10);
-		PINNED.put("RTT_SPIKE_PCT", 200);
-		PINNED.put("RTT_SPIKE_ADD_MS", 50);
-		PINNED.put("RTT_SPIKE_OPENS", false);
-		PINNED.put("RTT_STALE_S", 5);
-		PINNED.put("RTT_SWING_FACTOR", 3);
-		PINNED.put("CLICK_SENT_BYTES", 600);
-		PINNED.put("CLICK_SENT_UNITS", 4);
-		PINNED.put("CLICK_BASE_S", 10);
-		PINNED.put("PING_WARN_MS", 80);
-		PINNED.put("PING_BAD_MS", 150);
-		PINNED.put("PING_STEADY_MS", 50);
-		PINNED.put("PING_USUAL_LOWER_MS", 30);
-		PINNED.put("RESENT_WINDOW_S", 16);
-		PINNED.put("RESENT_MIN_BYTES", 2048);
-		PINNED.put("RESENT_MIN_UNITS", 8);
-		PINNED.put("RESENT_PER_MILLE", 10);
-		PINNED.put("RESENT_LOOK_S", 2);
-		PINNED.put("LOAD_LONG_MS", 2000);
-		PINNED.put("LOADS_LOOK_S", 600);
-		PINNED.put("EVENT_QUIET_S", 5);
-		PINNED.put("EVENT_MAX_S", 120);
-		PINNED.put("CONDITION_HOLD_S", 10);
-		PINNED.put("VERDICT_HOLD_S", 10);
-		PINNED.put("EVENT_SHOW_S", 10);
-		PINNED.put("SCORE_MARGIN", 15);
-		PINNED.put("SUPPORT_POINTS", 10);
-		PINNED.put("EVENT_ROWS", 6);
-		PINNED.put("STRIP_COLUMNS", 213);
-		PINNED.put("STRIP_FPS_MAX", 60);
-		PINNED.put("STRIP_TICK_MIN_MS", 450);
-		PINNED.put("STRIP_TICK_MAX_MS", 900);
-		PINNED.put("STRIP_TICK_PAD_MS", 50);
-		PINNED.put("STRIP_PING_MAX_MS", 100);
-		PINNED.put("STRIP_PING_PAD_PCT", 120);
-		PINNED.put("HOST_FILL_S", 3);
-		PINNED.put("BADGE_HOLD_S", 15);
-		PINNED.put("CHAT_GAP_S", 30);
-	}
-
 	@Test
 	public void everyStartingValueIsPinned()
 	{
@@ -172,69 +86,5 @@ public class ThresholdsTest
 		assertEquals(3, Thresholds.HOST_FILL_S);
 		assertEquals(15, Thresholds.BADGE_HOLD_S);
 		assertEquals(30, Thresholds.CHAT_GAP_S);
-	}
-
-	/** Read by reflection too, so the pins above are the class's real values and not a compiler's copy. */
-	@Test
-	public void everyConstantIsPinned() throws IllegalAccessException
-	{
-		final Map<String, Object> actual = new LinkedHashMap<>();
-		for (Field f : Thresholds.class.getDeclaredFields())
-		{
-			if (!f.isSynthetic())
-			{
-				actual.put(f.getName(), f.get(null));
-			}
-		}
-		assertEquals("a new or removed threshold must be pinned here", new TreeSet<>(PINNED.keySet()),
-			new TreeSet<>(actual.keySet()));
-		for (Map.Entry<String, Object> e : PINNED.entrySet())
-		{
-			assertEquals(e.getKey(), e.getValue(), actual.get(e.getKey()));
-		}
-		assertEquals(72, actual.size());
-	}
-
-	/**
-	 * {@code DISCONNECT_TAIL_S} was removed on 2026-09-29 (contract 3.1, gap G2 of section 11): an event that the
-	 * detector makes always holds its disconnect inside its own span, so nothing reads a tail.
-	 */
-	@Test
-	public void theDisconnectTailIsGone()
-	{
-		for (Field f : Thresholds.class.getDeclaredFields())
-		{
-			assertNotEquals("DISCONNECT_TAIL_S", f.getName());
-		}
-	}
-
-	@Test
-	public void everyFieldIsPublicStaticFinal()
-	{
-		for (Field f : Thresholds.class.getDeclaredFields())
-		{
-			if (f.isSynthetic())
-			{
-				continue;
-			}
-			final int m = f.getModifiers();
-			assertTrue(f.getName() + " must be public static final",
-				Modifier.isPublic(m) && Modifier.isStatic(m) && Modifier.isFinal(m));
-			assertTrue(f.getName() + " is a number or a switch",
-				f.getType() == int.class || f.getType() == boolean.class);
-		}
-	}
-
-	@Test
-	public void itCannotBeBuilt()
-	{
-		assertTrue(Modifier.isFinal(Thresholds.class.getModifiers()));
-		final Constructor<?>[] constructors = Thresholds.class.getDeclaredConstructors();
-		assertEquals(1, constructors.length);
-		assertTrue(Modifier.isPrivate(constructors[0].getModifiers()));
-		for (java.lang.reflect.Method m : Thresholds.class.getDeclaredMethods())
-		{
-			assertTrue("constants only, but it has " + m.getName(), m.isSynthetic());
-		}
 	}
 }

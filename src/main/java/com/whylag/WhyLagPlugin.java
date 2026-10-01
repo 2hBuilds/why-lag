@@ -232,28 +232,29 @@ public class WhyLagPlugin extends Plugin
 	Consumer<Runnable> edt = SwingUtilities::invokeLater;
 
 	// ---------------------------------------------------------------- what startUp builds
+	// The fields here without "private" are test seams: WhyLagWiringTest reads them (and sets gpu and settingsDirty).
 
-	private final PanelActions actions = new Actions();
+	final PanelActions actions = new Actions();
 
 	private Os os;
 	private Session session;
-	private LagEngine engine;
+	LagEngine engine;
 	private SceneCounter counter;
 	private ConnectionProbe connection;
 	private final ConnSample conn = new ConnSample();
 	private SettingsReader settingsReader;
-	private WhyLagPanel panel;
-	private NavigationButton navButton;
+	WhyLagPanel panel;
+	NavigationButton navButton;
 	private BadgeModel badge;
-	private BadgeOverlay overlay;
-	private BadgeInfoBox infoBox;
+	BadgeOverlay overlay;
+	BadgeInfoBox infoBox;
 	private ChatLine chatLine;
-	private ScheduledExecutorService executor;
+	ScheduledExecutorService executor;
 	private ScheduledFuture<?> sampler;
 	/** What the plugin has been doing: notes, warnings and errors. Written on the sampler thread. */
-	private Diagnostics diagnostics;
+	Diagnostics diagnostics;
 	/** One line a minute, the last hour. Written on the sampler thread. */
-	private MinuteLog minutes;
+	MinuteLog minutes;
 	/** What changed since the step before, written as notes. Sampler thread only. */
 	private StepNotes notes;
 	/** The client's version as RuneLite names it; "" = unknown. Set in startUp. */
@@ -262,11 +263,11 @@ public class WhyLagPlugin extends Plugin
 	/** The settings the last step was given. */
 	private volatile SettingsView settings;
 	/** Written on the client thread only; the sampler hands it to the connection probe. */
-	private volatile boolean inGame;
+	volatile boolean inGame;
 	/** Whether a GPU renderer is on ({@code Client#isGpu}). Written on the client thread only; the reader asks it. */
-	private volatile boolean gpu;
+	volatile boolean gpu;
 	/** The settings must be read again at the next sampler run. */
-	private volatile boolean settingsDirty;
+	volatile boolean settingsDirty;
 	/** The thread the executor made; null before it made one. */
 	private volatile Thread samplerThread;
 

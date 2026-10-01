@@ -57,8 +57,6 @@ public class StepCostTest
 			max = Math.max(max, n);
 		}
 		final long mean = sum / r.stepNanos.length;
-		System.out.println("StepCostTest: detector + verdict + 60-minute snapshot, " + r.stepNanos.length
-			+ " steps of a full session: mean " + mean / 1_000 + " us, max " + max / 1_000 + " us (T16: 1 ms)");
 		assertTrue("mean " + mean / 1_000 + " us", mean < T16_BOUND_MS * 1_000_000L);
 
 		// The steps did the real work: events opened and closed inside the timed window, each closed one was judged,

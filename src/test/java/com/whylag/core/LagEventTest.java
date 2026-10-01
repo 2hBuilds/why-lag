@@ -1,9 +1,5 @@
 package com.whylag.core;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
-import java.util.HashSet;
-import java.util.Set;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -34,10 +30,11 @@ public class LagEventTest
 
 	/**
 	 * Every number of the event is a DIFFERENT number, and the two switches differ, so a field copied into the wrong
-	 * place (a swap in the constructor call of {@code withVerdict}) is caught, not only a field left out.
+	 * place (a swap in the constructor call of {@code withVerdict}) is caught, not only a field left out. The probe's
+	 * {@code LagEventStructureTest} does the same over the class's own field list.
 	 */
 	@Test
-	public void withVerdictCopiesEveryField() throws IllegalAccessException
+	public void withVerdictCopiesEveryField()
 	{
 		final LagEvent e = new LagEvent(1, 2, 3, 4, 5, Trigger.TICK_OFF, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
 			18, 19, true, false, null);
@@ -65,19 +62,6 @@ public class LagEventTest
 		assertTrue(e.open);
 		assertFalse(e.becameCondition);
 
-		// The premise: every number differs from every other, so no swap can hide.
-		final Set<Long> numbers = new HashSet<>();
-		int numberFields = 0;
-		for (Field f : fields())
-		{
-			if (f.getType() == int.class || f.getType() == long.class)
-			{
-				numberFields++;
-				assertTrue(f.getName() + " repeats another field's number",
-					numbers.add(((Number) f.get(e)).longValue()));
-			}
-		}
-		assertEquals("the event's numbers", 19, numberFields);
 		assertNotEquals(e.open, e.becameCondition);
 
 		final Verdict v = aVerdict(Cause.CLIENT_BUSY, "The client itself stalled");
@@ -85,27 +69,28 @@ public class LagEventTest
 		assertNotSame(e, judged);
 		assertNull("the original is untouched", e.verdict);
 		assertSame(v, judged.verdict);
-		for (Field f : fields())
-		{
-			if (!f.getName().equals("verdict"))
-			{
-				assertEquals(f.getName(), f.get(e), f.get(judged));
-			}
-		}
-	}
-
-	/** The instance fields of {@link LagEvent}. */
-	private static Set<Field> fields()
-	{
-		final Set<Field> out = new HashSet<>();
-		for (Field f : LagEvent.class.getDeclaredFields())
-		{
-			if (!Modifier.isStatic(f.getModifiers()) && !f.isSynthetic())
-			{
-				out.add(f);
-			}
-		}
-		return out;
+		assertEquals("id", e.id, judged.id);
+		assertEquals("startSec", e.startSec, judged.startSec);
+		assertEquals("endSec", e.endSec, judged.endSec);
+		assertEquals("startWallMs", e.startWallMs, judged.startWallMs);
+		assertEquals("triggers", e.triggers, judged.triggers);
+		assertEquals("first", e.first, judged.first);
+		assertEquals("world", e.world, judged.world);
+		assertEquals("region", e.region, judged.region);
+		assertEquals("players", e.players, judged.players);
+		assertEquals("npcs", e.npcs, judged.npcs);
+		assertEquals("fps", e.fps, judged.fps);
+		assertEquals("worstFrameMs", e.worstFrameMs, judged.worstFrameMs);
+		assertEquals("meanTickGapMs", e.meanTickGapMs, judged.meanTickGapMs);
+		assertEquals("worstTickGapMs", e.worstTickGapMs, judged.worstTickGapMs);
+		assertEquals("worstCorrectedTickMs", e.worstCorrectedTickMs, judged.worstCorrectedTickMs);
+		assertEquals("rttMs", e.rttMs, judged.rttMs);
+		assertEquals("rttMaxMs", e.rttMaxMs, judged.rttMaxMs);
+		assertEquals("rttBeforeMs", e.rttBeforeMs, judged.rttBeforeMs);
+		assertEquals("sentUnits", e.sentUnits, judged.sentUnits);
+		assertEquals("resentUnits", e.resentUnits, judged.resentUnits);
+		assertEquals("open", e.open, judged.open);
+		assertEquals("becameCondition", e.becameCondition, judged.becameCondition);
 	}
 
 	/** An event of 14 s on world 416 with every number known; judged when {@code v} is not null. */

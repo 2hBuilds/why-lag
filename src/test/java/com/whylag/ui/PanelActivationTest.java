@@ -74,7 +74,7 @@ public class PanelActivationTest
 				assertEquals("open " + open + ": no layout", 0, counting.layoutsOf(p));
 				for (Component c : p.getComponents())
 				{
-					assertEquals("open " + open + ": one repaint of " + c.getClass().getSimpleName(), 1,
+					assertEquals("open " + open + ": one repaint of " + PanelFixtures.label(c), 1,
 						counting.repaints(c));
 				}
 				assertEquals("nothing else is repainted", p.getComponentCount(), counting.repaintsOf(p));

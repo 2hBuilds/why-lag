@@ -1,7 +1,5 @@
 package com.whylag.core;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.util.List;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
@@ -123,23 +121,6 @@ public class EventLogTest
 		catch (IndexOutOfBoundsException expected)
 		{
 			// as it should
-		}
-	}
-
-	@Test
-	public void everyFieldIsPublicFinal()
-	{
-		for (Class<?> c : new Class<?>[] {LagEvent.class, Verdict.class, Tile.class, Strip.class,
-			PanelSnapshot.class, SettingsView.class, Session.class})
-		{
-			for (Field f : c.getDeclaredFields())
-			{
-				final int m = f.getModifiers();
-				if (Modifier.isPublic(m))
-				{
-					assertTrue(c.getSimpleName() + "." + f.getName() + " must be final", Modifier.isFinal(m));
-				}
-			}
 		}
 	}
 

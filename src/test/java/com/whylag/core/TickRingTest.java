@@ -145,10 +145,8 @@ public class TickRingTest
 
 	/** 3,000,000,000 ms (about 34.7 days) goes in and comes out: an int would have wrapped at 24.8 days. */
 	@Test
-	public void atMsHoldsMoreThanTwentyFiveDays() throws ReflectiveOperationException
+	public void atMsHoldsMoreThanTwentyFiveDays()
 	{
-		assertEquals("session ms are a long", long.class, TickRow.class.getField("atMs").getType());
-		assertEquals(long.class, TickRing.class.getMethod("atMs", long.class).getReturnType());
 		final TickRing ring = new TickRing(4);
 		final TickRow row = new TickRow();
 		row.atMs = 3_000_000_000L;

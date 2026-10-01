@@ -130,8 +130,8 @@ public final class WhyLagPanel extends PluginPanel implements PanelControl
 	private volatile boolean active;
 	private volatile int activations;
 	private volatile int deactivations;
-	/** The newest snapshot handed to {@link #show}; Swing thread only. */
-	private PanelSnapshot last;
+	/** The newest snapshot handed to {@link #show}; Swing thread only. Package-private: a test seam (PanelPeek). */
+	PanelSnapshot last;
 	/** The selected event's id, -1 = none; Swing thread only. */
 	private long selectedId = -1;
 	/** Counts presses and spent fallbacks: a report whose press is not the newest generation is stale; Swing thread only. */

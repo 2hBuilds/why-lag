@@ -7,16 +7,8 @@ import java.awt.Color;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import net.runelite.client.ui.FontManager;
 import org.junit.Test;
 import static com.whylag.ui.PanelFixtures.Drawn;
@@ -100,9 +92,12 @@ public class AnswerCardTest
 		}
 	}
 
-	/** RSB32 is the bold face at 32, derived from FontManager's; no other font is derived in ui (a source scan). */
+	/**
+	 * RSB32 is the bold face at 32, derived from FontManager's. (That no other font is derived in ui is a source scan:
+	 * the probe's {@code AnswerCardSourceTest}.)
+	 */
 	@Test
-	public void theBigFontIsTheBoldFaceAtThirtyTwo() throws IOException
+	public void theBigFontIsTheBoldFaceAtThirtyTwo()
 	{
 		final Font bold = FontManager.getRunescapeBoldFont();
 		assertEquals(32f, Ui.RSB32.getSize2D(), 0f);
@@ -116,28 +111,6 @@ public class AnswerCardTest
 		assertSame("the 16 px faces are FontManager's own", FontManager.getRunescapeFont(), Ui.RS);
 		assertSame(FontManager.getRunescapeBoldFont(), Ui.RSB);
 		assertSame(FontManager.getRunescapeSmallFont(), Ui.RSS);
-
-		final Path ui = PanelFixtures.projectRoot().resolve("src/main/java/com/whylag/ui");
-		final List<Path> files;
-		try (Stream<Path> walk = Files.list(ui))
-		{
-			files = walk.filter(p -> p.toString().endsWith(".java")).collect(Collectors.toList());
-		}
-		assertTrue("the scan reads the ui sources: " + files.size(), files.size() >= 14);
-		final Pattern call = Pattern.compile("\\bderiveFont\\s*\\(");
-		final List<String> found = new ArrayList<>();
-		for (Path f : files)
-		{
-			final Matcher m = call.matcher(code(new String(Files.readAllBytes(f), StandardCharsets.UTF_8)));
-			while (m.find())
-			{
-				found.add(f.getFileName().toString());
-			}
-		}
-		assertEquals("one derived font in ui, in Ui.java: " + found, 1, found.size());
-		assertEquals("Ui.java", found.get(0));
-		assertTrue("the scan sees a call written in code", call.matcher(code("x = f.deriveFont(12f);")).find());
-		assertFalse("and not one in a comment", call.matcher(code("// f.deriveFont(12f)")).find());
 	}
 
 	@Test
@@ -440,57 +413,5 @@ public class AnswerCardTest
 		}
 		fail("not drawn: " + text + " in " + drawn);
 		return null;
-	}
-
-	/** Source text with its comments and string literals blanked. */
-	static String code(String source)
-	{
-		final StringBuilder out = new StringBuilder(source.length());
-		int i = 0;
-		while (i < source.length())
-		{
-			final char c = source.charAt(i);
-			final char next = i + 1 < source.length() ? source.charAt(i + 1) : '\0';
-			if (c == '/' && next == '/')
-			{
-				while (i < source.length() && source.charAt(i) != '\n')
-				{
-					out.append(' ');
-					i++;
-				}
-			}
-			else if (c == '/' && next == '*')
-			{
-				final int close = source.indexOf("*/", i + 2);
-				final int end = close < 0 ? source.length() : close + 2;
-				for (; i < end; i++)
-				{
-					out.append(source.charAt(i) == '\n' ? '\n' : ' ');
-				}
-			}
-			else if (c == '"' || c == '\'')
-			{
-				out.append(' ');
-				i++;
-				while (i < source.length() && source.charAt(i) != c && source.charAt(i) != '\n')
-				{
-					if (source.charAt(i) == '\\')
-					{
-						out.append(' ');
-						i++;
-					}
-					out.append(' ');
-					i++;
-				}
-				out.append(' ');
-				i++;
-			}
-			else
-			{
-				out.append(c);
-				i++;
-			}
-		}
-		return out.toString();
 	}
 }

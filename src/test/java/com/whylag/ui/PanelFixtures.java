@@ -48,11 +48,6 @@ import java.awt.image.BufferedImageOp;
 import java.awt.image.ImageObserver;
 import java.awt.image.RenderedImage;
 import java.awt.image.renderable.RenderableImage;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.text.AttributedCharacterIterator;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -842,9 +837,10 @@ final class PanelFixtures
 			Thread.currentThread().interrupt();
 			throw new AssertionError(e);
 		}
-		catch (InvocationTargetException e)
+		catch (Exception e)
 		{
-			throw new AssertionError(e.getCause());
+			// invokeAndWait wraps what the task threw; the task here catches its own, so this is the wrapper's cause
+			throw new AssertionError(e.getCause() != null ? e.getCause() : e);
 		}
 		if (failure[0] instanceof Error)
 		{
@@ -1065,33 +1061,102 @@ final class PanelFixtures
 		});
 	}
 
-	/** Calls the block's own {@code paintComponent} (protected; reached by reflection from this package). */
-	static void paintComponent(JComponent c, Graphics g) throws Exception
+	/**
+	 * Calls the block's own {@code paintComponent}: protected, but this package holds every block that overrides it, so
+	 * each is called by its own type. A block that is none of them has no override of its own to call.
+	 */
+	static void paintComponent(JComponent c, Graphics g)
 	{
-		Class<?> k = c.getClass();
-		while (k != null)
+		if (c instanceof AnswerCard)
 		{
-			try
-			{
-				final Method m = k.getDeclaredMethod("paintComponent", Graphics.class);
-				m.setAccessible(true);
-				m.invoke(c, g);
-				return;
-			}
-			catch (NoSuchMethodException e)
-			{
-				k = k.getSuperclass();
-			}
-			catch (InvocationTargetException e)
-			{
-				if (e.getCause() instanceof Error)
-				{
-					throw (Error) e.getCause();
-				}
-				throw (Exception) e.getCause();
-			}
+			((AnswerCard) c).paintComponent(g);
 		}
-		throw new AssertionError("no paintComponent on " + c.getClass());
+		else if (c instanceof CellStrip)
+		{
+			((CellStrip) c).paintComponent(g);
+		}
+		else if (c instanceof EventList)
+		{
+			((EventList) c).paintComponent(g);
+		}
+		else if (c instanceof FoldRow)
+		{
+			((FoldRow) c).paintComponent(g);
+		}
+		else if (c instanceof HeaderRow)
+		{
+			((HeaderRow) c).paintComponent(g);
+		}
+		else if (c instanceof RangeRow)
+		{
+			((RangeRow) c).paintComponent(g);
+		}
+		else if (c instanceof SessionCounts)
+		{
+			((SessionCounts) c).paintComponent(g);
+		}
+		else if (c instanceof SessionHeader)
+		{
+			((SessionHeader) c).paintComponent(g);
+		}
+		else if (c instanceof StripChart)
+		{
+			((StripChart) c).paintComponent(g);
+		}
+		else if (c instanceof WhyLagPanel.Footer)
+		{
+			((WhyLagPanel.Footer) c).paintComponent(g);
+		}
+		else
+		{
+			throw new AssertionError("no paintComponent of its own on " + label(c));
+		}
+	}
+
+	/** The block's name for a failure message, from the same list of blocks {@link #paintComponent} knows. */
+	static String label(java.awt.Component c)
+	{
+		if (c instanceof AnswerCard)
+		{
+			return "AnswerCard";
+		}
+		if (c instanceof CellStrip)
+		{
+			return "CellStrip";
+		}
+		if (c instanceof EventList)
+		{
+			return "EventList";
+		}
+		if (c instanceof FoldRow)
+		{
+			return "FoldRow";
+		}
+		if (c instanceof HeaderRow)
+		{
+			return "HeaderRow";
+		}
+		if (c instanceof RangeRow)
+		{
+			return "RangeRow";
+		}
+		if (c instanceof SessionCounts)
+		{
+			return "SessionCounts";
+		}
+		if (c instanceof SessionHeader)
+		{
+			return "SessionHeader";
+		}
+		if (c instanceof StripChart)
+		{
+			return "StripChart";
+		}
+		if (c instanceof WhyLagPanel.Footer)
+		{
+			return "Footer";
+		}
+		return c == null ? "null" : String.valueOf(c.getName());
 	}
 
 	static Color pixel(BufferedImage img, int x, int y)
@@ -1143,21 +1208,6 @@ final class PanelFixtures
 	{
 		final double s = v / 255.0;
 		return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-	}
-
-	// ============================================================================ files
-
-	/** The project folder: the first folder above the working directory that holds {@code src/main/java/com/whylag}. */
-	static Path projectRoot()
-	{
-		for (Path dir = Paths.get("").toAbsolutePath(); dir != null; dir = dir.getParent())
-		{
-			if (Files.isDirectory(dir.resolve(Paths.get("src", "main", "java", "com", "whylag"))))
-			{
-				return dir;
-			}
-		}
-		throw new AssertionError("no src/main/java/com/whylag above " + Paths.get("").toAbsolutePath());
 	}
 
 	// ============================================================================ counting repaints

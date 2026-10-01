@@ -1,9 +1,8 @@
 package com.whylag.core;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.time.ZoneOffset;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -56,9 +55,8 @@ public class SessionTest
 
 	/** 30 days of nanos are 2,592,000,000 ms: past {@code Integer.MAX_VALUE}, where an int would have wrapped. */
 	@Test
-	public void msOfDoesNotWrapAfterTwentyFiveDays() throws NoSuchMethodException
+	public void msOfDoesNotWrapAfterTwentyFiveDays()
 	{
-		assertEquals("session ms are a long", long.class, Session.class.getMethod("msOf", long.class).getReturnType());
 		final Session s = session();
 		final long thirtyDays = 30 * NANOS_PER_DAY;
 		assertEquals(2_592_000_000L, s.msOf(START + thirtyDays));
@@ -151,27 +149,13 @@ public class SessionTest
 	}
 
 	/**
-	 * The login second is written on the client thread and read on the sampler thread: it must be the one volatile
-	 * field of the session. First the modifier itself, which no timing can hide; then a reader spinning on the
-	 * getter, compiled before the write, must see the one write. A plain field would be read once and held.
+	 * The login second is written on the client thread and read on the sampler thread: a reader spinning on the
+	 * getter, compiled before the write, must see the one write. A plain field would be read once and held. (That the
+	 * field is the one volatile one is the probe's {@code SessionStructureTest}.)
 	 */
 	@Test(timeout = 60_000)
-	public void theLoginIsOneVolatileField() throws Exception
+	public void theLoginIsSeenByAReaderThread() throws Exception
 	{
-		final Field login = Session.class.getDeclaredField("loggedInSinceSec");
-		final int m = login.getModifiers();
-		assertTrue("Session.loggedInSinceSec must be volatile (contract 3.5)", Modifier.isVolatile(m));
-		assertTrue(Modifier.isPrivate(m));
-		assertEquals(long.class, login.getType());
-		for (Field f : Session.class.getDeclaredFields())
-		{
-			if (!Modifier.isStatic(f.getModifiers()) && !f.isSynthetic() && !f.equals(login))
-			{
-				assertTrue("Session." + f.getName() + " must be final: the login is the one mutable field",
-					Modifier.isFinal(f.getModifiers()));
-			}
-		}
-
 		final Session s = session();
 		final CountDownLatch spinning = new CountDownLatch(1);
 		final Thread reader = new Thread(() ->
@@ -186,7 +170,7 @@ public class SessionTest
 		reader.start();
 		spinning.await();
 		// Long enough for the JIT to compile the spinning loop, so a plain field would be hoisted out of it.
-		Thread.sleep(300);
+		TimeUnit.MILLISECONDS.sleep(300);
 		s.loggedInSince(42);
 		reader.join(10_000);
 		assertFalse("the reader never saw the login", reader.isAlive());

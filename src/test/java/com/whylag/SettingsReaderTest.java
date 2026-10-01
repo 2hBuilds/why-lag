@@ -4,10 +4,7 @@ import com.whylag.core.CapSource;
 import com.whylag.core.Os;
 import com.whylag.core.Renderer;
 import com.whylag.core.SettingsView;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -17,8 +14,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import java.util.function.IntSupplier;
 import net.runelite.client.config.ConfigManager;
-import net.runelite.client.plugins.Plugin;
-import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.fps.FpsPlugin;
 import org.junit.Before;
 import org.junit.Test;
@@ -65,17 +60,19 @@ public class SettingsReaderTest
 		gpuOn.set(true);
 	}
 
-	/** A plugin is on when its flag says "true": FPS Control's flag is the client's own key and default. */
+	/**
+	 * A plugin is on when its flag says "true": FPS Control's flag is the client's own key (the probe's
+	 * {@code SettingsReaderStructureTest} reads it, and the client's default, from FPS Control's own descriptor).
+	 */
 	@Test
 	public void theFlagKeysAndDefaultsAreWhatRuneLiteStores()
 	{
 		assertEquals("runelite", SettingsReader.FLAG_GROUP);
-		assertEquals(keyOf(FpsPlugin.class), SettingsReader.FPS_FLAG);
+		assertEquals("FPS Control's class is FpsPlugin: its simple name, lower case", "fpsplugin",
+			SettingsReader.FPS_FLAG);
 		assertEquals("117 HD's class is rs117.hd.HdPlugin: its simple name, lower case", "hdplugin",
 			SettingsReader.HD_FLAG);
 		assertEquals("and its config group, read too", "hd", SettingsReader.HD_FLAG_ALT);
-		assertFalse("FPS Control is off by default", FpsPlugin.class.getAnnotation(PluginDescriptor.class)
-			.enabledByDefault());
 	}
 
 	/** C10: a setting stays stored when its plugin is off, and an off plugin caps nothing. */
@@ -423,32 +420,10 @@ public class SettingsReaderTest
 		assertNotNull(new SettingsReader(null, null, null, null, null).read());
 	}
 
-	/** The reader is made of a config manager, the renderer, a refresh rate, the system and a version: no plugin. */
-	@Test
-	public void noPluginManagerAndNoPluginObject()
-	{
-		final Constructor<?>[] constructors = SettingsReader.class.getConstructors();
-		assertEquals(1, constructors.length);
-		assertEquals(Arrays.asList(ConfigManager.class, BooleanSupplier.class, IntSupplier.class, Os.class,
-			String.class), Arrays.asList(constructors[0].getParameterTypes()));
-		for (Field f : SettingsReader.class.getDeclaredFields())
-		{
-			assertFalse(f.getName() + " holds a plugin", Plugin.class.isAssignableFrom(f.getType()));
-			assertFalse(f.getName() + " is a plugin manager", f.getType().getSimpleName().equals("PluginManager"));
-		}
-	}
-
 	// ---------------------------------------------------------------- helpers
 
 	private SettingsReader reader()
 	{
 		return new SettingsReader(config, gpuOn::get, () -> 60, Os.WINDOWS, VERSION);
-	}
-
-	/** The key RuneLite stores a plugin's flag under: its configName, else its class's simple name, lower case. */
-	private static String keyOf(Class<? extends Plugin> plugin)
-	{
-		final PluginDescriptor d = plugin.getAnnotation(PluginDescriptor.class);
-		return (d.configName().isEmpty() ? plugin.getSimpleName() : d.configName()).toLowerCase();
 	}
 }

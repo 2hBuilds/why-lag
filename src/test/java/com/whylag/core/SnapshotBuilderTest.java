@@ -787,7 +787,6 @@ public class SnapshotBuilderTest
 			p = build(s, settings, 3600, 60);
 		}
 		final long meanNanos = (System.nanoTime() - start) / runs;
-		System.out.println("SnapshotBuilder, 60-minute snapshot of a full session: mean " + meanNanos / 1_000 + " us");
 		assertTrue("mean " + meanNanos / 1_000 + " us", meanNanos < T16_BOUND_MS * 1_000_000L);
 		assertEquals(Thresholds.EVENTS, p.sessionEvents.size());
 		assertEquals(10, p.strips[FPS].values[firstColumnOf(p, 1800)]);

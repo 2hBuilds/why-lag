@@ -2,7 +2,6 @@ package com.whylag;
 
 import com.whylag.core.NoData;
 import java.io.FileDescriptor;
-import java.lang.reflect.InaccessibleObjectException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -87,7 +86,7 @@ public class ConnectionProbeTest
 		for (Point at : Point.values())
 		{
 			for (RuntimeException e : new RuntimeException[] {
-				new InaccessibleObjectException("JDK 17 without --add-opens: FileDescriptor.fd"),
+				new SecurityException("JDK 17 without --add-opens: FileDescriptor.fd"),
 				new IllegalStateException("closed"), new NullPointerException()})
 			{
 				final ConnSample out = reading();
@@ -158,7 +157,7 @@ public class ConnectionProbeTest
 	public void neverThrows()
 	{
 		final Throwable[] failures = {new RuntimeException(), new IllegalArgumentException(),
-			new InaccessibleObjectException("x"), new ArithmeticException(), new NoClassDefFoundError(),
+			new SecurityException("x"), new ArithmeticException(), new NoClassDefFoundError(),
 			new UnsatisfiedLinkError(), new NoSuchMethodError(), new NoSuchFieldError(), new ClassFormatError(),
 			new ExceptionInInitializerError()};
 		for (Point at : Point.values())
@@ -191,8 +190,8 @@ public class ConnectionProbeTest
 
 	/**
 	 * The real seam, {@code Ping::getTCPInfo}, on a descriptor that is no socket: never NONE and never a throw. On
-	 * JDK 17 without {@code --add-opens} Ping's reflection throws, which is ERROR, "Could not read it" (contract 7,
-	 * L9); with the opens, the system call fails and Ping answers null, which is UNSUPPORTED.
+	 * JDK 17 without {@code --add-opens} Ping cannot read the descriptor and throws, which is ERROR, "Could not
+	 * read it" (contract 7, L9); with the opens, the system call fails and Ping answers null, which is UNSUPPORTED.
 	 */
 	@Test
 	public void theRealPingOnANonSocketIsNeverNone()

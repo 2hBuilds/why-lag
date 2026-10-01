@@ -230,8 +230,8 @@ public class PanelWidthTest
 				assertEquals(f.name, 225, p.getPreferredSize().width);
 				for (JComponent block : PanelFixtures.blocks(p))
 				{
-					assertEquals(f + " " + block.getClass().getSimpleName(), 6, block.getX());
-					assertEquals(f + " " + block.getClass().getSimpleName(), 213, block.getWidth());
+					assertEquals(f + " " + PanelFixtures.label(block), 6, block.getX());
+					assertEquals(f + " " + PanelFixtures.label(block), 213, block.getWidth());
 				}
 				final BufferedImage img = PanelFixtures.paintPanel(p);
 				for (int y = 0; y < img.getHeight(); y++)

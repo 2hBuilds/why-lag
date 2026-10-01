@@ -9,13 +9,12 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
-import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
-import javax.imageio.ImageIO;
 import net.runelite.client.ui.FontManager;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
@@ -25,13 +24,9 @@ import static org.junit.Assert.assertTrue;
 /**
  * Pictures for the checker's eye (contract P2.3, section 8): every state of picture 22, part A - smooth, world lag,
  * ping lag, low FPS, client froze (slow, not lag: a triangle), not sure, measuring - and the
- * dimmed world lag, in each of the four styles, each on a dark green ground, to
- * {@code build/whylag/badge-<style>-<state>.png}, and ONE sheet of them all, {@code build/whylag/badge-sheet.png}.
- * The files are checked to exist and not to be blank.
- *
- * <p>The folder is SHARED with the panel's {@code PanelStatesRenderTest}: this test makes it when it is missing,
- * names every file it writes {@code badge-...}, writes and replaces only those, and deletes nothing there;
- * {@code gradlew clean} drops old pictures.
+ * dimmed world lag, in each of the four styles, each on a dark green ground ({@code badge-<style>-<state>}), and ONE
+ * sheet of them all ({@code badge-sheet}). The pictures are checked in memory to exist and not to be blank; the
+ * local-only probe's {@code PicturesTest} writes them to {@code build/whylag/<name>.png}.
  *
  * <p>Choice: the ground is 38,58,30 with 6 px round each badge; the sheet: styles as columns, states as rows.
  * <p>Choice: a file is badge-{style}-{state}.png, both in lower case with dashes: badge-icon-and-words-world-lag.png.
@@ -88,17 +83,18 @@ public class BadgeRenderTest
 		return out;
 	}
 
-	@Test
-	public void paintsEveryStateInEveryStyle() throws IOException
+	/**
+	 * The pictures of this test, by file name without the extension: every state in every style on the grass,
+	 * {@code badge-<style>-<state>}, and the sheet of them all, {@code badge-sheet}. The probe's {@code PicturesTest}
+	 * writes them to {@code build/whylag} for the lead's eye; this test checks them in memory.
+	 */
+	public static Map<String, BufferedImage> pictures()
 	{
-		final File dir = outputDir();
-		assertTrue("build/whylag is made when missing", dir.isDirectory() || dir.mkdirs());
 		final BadgePainter painter = new BadgePainter(new BadgeIcons());
 		final List<State> states = states();
 		final BadgeStyle[] styles = BadgeStyle.values();
 		final BufferedImage[][] badges = new BufferedImage[states.size()][styles.length];
-		final List<File> written = new ArrayList<>();
-
+		final Map<String, BufferedImage> out = new LinkedHashMap<>();
 		for (int r = 0; r < states.size(); r++)
 		{
 			for (int c = 0; c < styles.length; c++)
@@ -113,37 +109,43 @@ public class BadgeRenderTest
 				g.fillRect(0, 0, onGrass.getWidth(), onGrass.getHeight());
 				g.drawImage(badge, MARGIN, MARGIN, null);
 				g.dispose();
-				final File file = new File(dir, "badge-" + STYLE_NAMES[c] + "-" + states.get(r).name + ".png");
-				assertTrue(ImageIO.write(onGrass, "png", file));
-				written.add(file);
+				out.put("badge-" + STYLE_NAMES[c] + "-" + states.get(r).name, onGrass);
 			}
 		}
+		out.put("badge-sheet", sheet(states, styles, badges));
+		return out;
+	}
 
-		final File sheet = new File(dir, "badge-sheet.png");
-		assertTrue(ImageIO.write(sheet(states, styles, badges), "png", sheet));
-		written.add(sheet);
+	@Test
+	public void paintsEveryStateInEveryStyle()
+	{
+		final Map<String, BufferedImage> pictures = pictures();
+		final BadgePainter painter = new BadgePainter(new BadgeIcons());
+		final List<State> states = states();
+		final BadgeStyle[] styles = BadgeStyle.values();
 
-		assertEquals("8 states x 4 styles, and the sheet", 33, written.size());
-		for (File file : written)
+		assertEquals("8 states x 4 styles, and the sheet", 33, pictures.size());
+		for (Map.Entry<String, BufferedImage> e : pictures.entrySet())
 		{
-			assertTrue(file.getName().startsWith("badge-"));
-			assertTrue(file + " exists", file.isFile());
-			assertTrue(file + " is not empty", file.length() > 0);
-			final BufferedImage back = ImageIO.read(file);
-			assertNotNull(file + " reads back", back);
-			assertTrue(file + " is not blank", distinctColours(back) >= 3);
-			assertEquals(file + ": the grass in the corner", GRASS.getRGB(), back.getRGB(0, 0));
+			final String name = e.getKey();
+			final BufferedImage picture = e.getValue();
+			assertTrue(name.startsWith("badge-"));
+			assertNotNull(name, picture);
+			assertTrue(name + " is not blank", distinctColours(picture) >= 3);
+			assertEquals(name + ": the grass in the corner", GRASS.getRGB(), picture.getRGB(0, 0));
 		}
 		for (int r = 0; r < states.size(); r++)
 		{
 			for (int c = 0; c < styles.length; c++)
 			{
-				final File file = written.get(r * styles.length + c);
-				final BufferedImage back = ImageIO.read(file);
-				assertEquals(file + ": the badge and the grass round it", badges[r][c].getWidth() + 2 * MARGIN,
-					back.getWidth());
-				assertEquals(badges[r][c].getHeight() + 2 * MARGIN, back.getHeight());
-				assertTrue(file + ": the badge's box is on the grass", back.getRGB(MARGIN, MARGIN) != GRASS.getRGB());
+				final String name = "badge-" + STYLE_NAMES[c] + "-" + states.get(r).name;
+				final BufferedImage badge = painter.paint(states.get(r).view(styles[c]));
+				final BufferedImage picture = pictures.get(name);
+				assertNotNull(name, picture);
+				assertEquals(name + ": the badge and the grass round it", badge.getWidth() + 2 * MARGIN,
+					picture.getWidth());
+				assertEquals(badge.getHeight() + 2 * MARGIN, picture.getHeight());
+				assertTrue(name + ": the badge's box is on the grass", picture.getRGB(MARGIN, MARGIN) != GRASS.getRGB());
 			}
 		}
 	}
@@ -227,20 +229,5 @@ public class BadgeRenderTest
 			}
 		}
 		return seen.size();
-	}
-
-	/** {@code build/whylag} of the project: found above the working directory by its {@code build.gradle}. */
-	private static File outputDir()
-	{
-		File dir = new File("").getAbsoluteFile();
-		for (File d = dir; d != null; d = d.getParentFile())
-		{
-			if (new File(d, "build.gradle").isFile() && new File(d, "src").isDirectory())
-			{
-				dir = d;
-				break;
-			}
-		}
-		return new File(new File(dir, "build"), "whylag");
 	}
 }

@@ -1,7 +1,5 @@
 package com.whylag.core;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -17,7 +15,7 @@ import static org.junit.Assert.fail;
 
 /**
  * The second ring (contract 3.3): wrap, the two writers' heads, the one slot of slack, every column of the clamp
- * table, the reader's re-check under a live writer and its size (T15).
+ * table, the reader's re-check under a live writer. Its size (T15) is the probe's {@code SecondRingStructureTest}.
  */
 public class SecondRingTest
 {
@@ -327,14 +325,12 @@ public class SecondRingTest
 	 * {@code HostSecond.clear()} sets every int to -1 but {@code sentUnits = resentUnits = 0}, and {@code conn} to
 	 * NONE. Every field is set to a value that is neither 0 nor -1 first, then cleared and checked one by one - a
 	 * clear() that left {@code rttMs} at 0 would turn every gap-filled second into "ping 0 ms". A new carrier is a
-	 * cleared one. The field counts keep this test whole: a new field needs its own lines here.
+	 * cleared one. The probe's {@code SecondRingStructureTest} keeps the field counts of this test: a new field needs
+	 * its own lines here.
 	 */
 	@Test
 	public void aNewCarrierIsCleared()
 	{
-		assertEquals("FrameSecond's fields, each named below", 11, instanceFields(FrameSecond.class));
-		assertEquals("HostSecond's fields, each named below", 5, instanceFields(HostSecond.class));
-
 		assertFrameCleared(new FrameSecond());
 		final FrameSecond f = new FrameSecond();
 		f.frames = 1;
@@ -384,17 +380,6 @@ public class SecondRingTest
 		assertEquals("sentUnits", 0, h.sentUnits);
 		assertEquals("resentUnits", 0, h.resentUnits);
 		assertEquals("conn", NoData.NONE, h.conn);
-	}
-
-	/** The instance (non-static) fields a carrier declares. */
-	private static int instanceFields(Class<?> type)
-	{
-		int n = 0;
-		for (Field field : type.getDeclaredFields())
-		{
-			n += Modifier.isStatic(field.getModifiers()) ? 0 : 1;
-		}
-		return n;
 	}
 
 	/**
@@ -469,19 +454,6 @@ public class SecondRingTest
 		assertEquals(total - 1, ring.head());
 	}
 
-	/** T15: the two rings and the three usuals of a {@link Session} are under 400 KB, in final arrays. */
-	@Test
-	public void sizes() throws Exception
-	{
-		final Session s = new Session(0, 0, Os.WINDOWS, ZoneOffset.UTC);
-		final long rings = arrayBytes(s.seconds) + arrayBytes(s.ticks);
-		final long usuals = arrayBytes(s.rttUsual) + arrayBytes(s.rttSession) + arrayBytes(s.fpsUsual);
-		assertTrue("rings are " + rings + " bytes", rings > 200_000);
-		assertTrue("rings and usuals are " + (rings + usuals) + " bytes, over 400 KB", rings + usuals < 400_000);
-		assertEquals("seconds + 1 slots", Thresholds.SECONDS + 1, arrayLength(s.seconds, "frames"));
-		assertEquals("ticks + 1 slots", Thresholds.TICKS + 1, arrayLength(s.ticks, "atMs"));
-	}
-
 	// ---------------------------------------------------------------- helpers
 
 	/** Every column of second {@code sec} derived from {@code sec}, inside each column's range. */
@@ -543,50 +515,5 @@ public class SecondRingTest
 		{
 			Thread.currentThread().interrupt();
 		}
-	}
-
-	/** Bytes held by every array field of {@code o}; each such field must be final (allocated once). */
-	static long arrayBytes(Object o) throws IllegalAccessException
-	{
-		long bytes = 0;
-		for (Field field : o.getClass().getDeclaredFields())
-		{
-			if (!field.getType().isArray() || Modifier.isStatic(field.getModifiers()))
-			{
-				continue;
-			}
-			assertTrue(o.getClass().getSimpleName() + "." + field.getName() + " must be final",
-				Modifier.isFinal(field.getModifiers()));
-			field.setAccessible(true);
-			final Object array = field.get(o);
-			final Class<?> type = field.getType().getComponentType();
-			final int length = java.lang.reflect.Array.getLength(array);
-			bytes += (long) length * elementSize(type);
-		}
-		return bytes;
-	}
-
-	private static int arrayLength(Object o, String name) throws ReflectiveOperationException
-	{
-		final Field field = o.getClass().getDeclaredField(name);
-		field.setAccessible(true);
-		return java.lang.reflect.Array.getLength(field.get(o));
-	}
-
-	private static int elementSize(Class<?> type)
-	{
-		if (type == byte.class || type == boolean.class)
-		{
-			return 1;
-		}
-		if (type == short.class || type == char.class)
-		{
-			return 2;
-		}
-		if (type == int.class || type == float.class)
-		{
-			return 4;
-		}
-		return 8;
 	}
 }

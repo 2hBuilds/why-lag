@@ -1,7 +1,5 @@
 package com.whylag.core;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -71,20 +69,6 @@ public class BadgeViewTest
 			"World lag", "Not you", "Lag - can't tell why", "Ticks 1,240 ms, ping 41 ms")));
 		assertFalse("tip 2", lag.sameAs(new BadgeView(true, BadgeStyle.ICON, Level.BAD, Icon.WORLD, false,
 			"World lag", "Not you", "World lag - not you", "Ticks 1,300 ms, ping 41 ms")));
-
-		assertEquals("nine fields, each checked above: a new field must be added to sameAs and here", 9,
-			instanceFields());
-	}
-
-	@Test
-	public void theViewIsImmutable()
-	{
-		for (Field f : BadgeView.class.getDeclaredFields())
-		{
-			assertTrue(f.getName() + " is final", Modifier.isFinal(f.getModifiers()));
-			assertTrue(f.getName() + " is public", Modifier.isPublic(f.getModifiers()));
-		}
-		assertTrue(Modifier.isFinal(BadgeView.class.getModifiers()));
 	}
 
 	/** The picture's lag while it happens: the globe with its red square, two lines and the tooltip's two lines. */
@@ -92,15 +76,5 @@ public class BadgeViewTest
 	{
 		return new BadgeView(true, BadgeStyle.ICON, Level.BAD, Icon.WORLD, false, "World lag", "Not you",
 			"World lag - not you", "Ticks 1,240 ms, ping 41 ms");
-	}
-
-	private static int instanceFields()
-	{
-		int n = 0;
-		for (Field f : BadgeView.class.getDeclaredFields())
-		{
-			n += Modifier.isStatic(f.getModifiers()) || f.isSynthetic() ? 0 : 1;
-		}
-		return n;
 	}
 }

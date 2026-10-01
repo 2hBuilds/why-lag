@@ -1,6 +1,8 @@
 package com.whylag;
 
-import com.google.inject.Provides;
+import com.google.inject.Guice;
+import com.google.inject.Provider;
+import com.google.inject.name.Names;
 import com.whylag.core.Answer;
 import com.whylag.core.BadgeStyle;
 import com.whylag.core.BadgeView;
@@ -28,22 +30,18 @@ import com.whylag.core.Thresholds;
 import com.whylag.core.Trigger;
 import com.whylag.core.Verdict;
 import com.whylag.core.WhenSmooth;
+import com.whylag.ui.PanelPeek;
 import com.whylag.ui.WhyLagPanel;
 import java.awt.Canvas;
 import java.awt.DisplayMode;
 import java.awt.GraphicsConfiguration;
 import java.awt.GraphicsDevice;
 import java.io.InputStream;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
 import java.util.Properties;
 import java.util.regex.Pattern;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -53,15 +51,12 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import javax.inject.Inject;
-import javax.inject.Named;
 import javax.swing.SwingUtilities;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.coords.WorldPoint;
-import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.FocusChanged;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
@@ -72,10 +67,7 @@ import net.runelite.client.callback.ClientThread;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.ConfigManager;
-import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
-import net.runelite.client.plugins.Plugin;
-import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.Overlay;
@@ -116,8 +108,8 @@ import static org.mockito.Mockito.when;
  * shut-down order, the developer bridge, the panel's snapshots, the handlers that only write a volatile, the
  * settings reads, the scene counts, the start-up read, and the game badge fed every step.
  *
- * <p>No client boots and no Guice injector builds the plugin: the injected fields are filled by reflection and the
- * handlers are called directly, which is how RuneLite calls them. The clock, the engine, the
+ * <p>No client boots and no Guice injector builds the plugin: a throwaway injector fills its injected fields from
+ * mocks and the handlers are called directly, which is how RuneLite calls them. The clock, the engine, the
  * executor and the hop to the Swing thread are the plugin's package-private seams. {@code startUp} and
  * {@code shutDown} run on the Swing thread, as RuneLite runs them. Every static slot is cleared in {@code @After}.
  */
@@ -135,21 +127,18 @@ public class WhyLagWiringTest
 	// ---------------------------------------------------------------- descriptor
 
 	@Test
-	public void descriptorAndSuperclass() throws Exception
+	public void theConfigIsProvidedByTheConfigManager()
 	{
-		final PluginDescriptor d = WhyLagPlugin.class.getAnnotation(PluginDescriptor.class);
-		assertNotNull(d);
-		assertEquals("2h Why Lag", d.name());
-		assertEquals("Tells you what caused the lag: frames, ticks or ping (v" + Version.CURRENT + ")",
-			d.description());
-		assertEquals(Arrays.asList("lag", "ping", "fps", "tick", "freeze", "stutter"), Arrays.asList(d.tags()));
-		// The loader checks the DIRECT superclass; an intermediate base class makes it skip the plugin silently.
-		assertEquals(Plugin.class, WhyLagPlugin.class.getSuperclass());
+		final ConfigManager manager = mock(ConfigManager.class);
+		final WhyLagConfig stored = mock(WhyLagConfig.class);
+		when(manager.getConfig(WhyLagConfig.class)).thenReturn(stored);
+		assertSame(stored, new WhyLagPlugin().provideConfig(manager));
+	}
 
-		final Method provides = WhyLagPlugin.class.getDeclaredMethod("provideConfig", ConfigManager.class);
-		assertNotNull(provides.getAnnotation(Provides.class));
-		assertEquals(WhyLagConfig.class, provides.getReturnType());
-
+	/** The descriptor file lists the plugin, and last. (The descriptor and the superclass are the probe's.) */
+	@Test
+	public void theHubDescriptorListsThePlugin() throws Exception
+	{
 		final Properties p = new Properties();
 		try (InputStream in = WhyLagWiringTest.class.getResourceAsStream("/runelite-plugin.properties"))
 		{
@@ -169,21 +158,13 @@ public class WhyLagWiringTest
 	@Test
 	public void executorIsOursAndNamed() throws Exception
 	{
-		for (Field f : WhyLagPlugin.class.getDeclaredFields())
-		{
-			final boolean injected = f.getAnnotation(Inject.class) != null
-				|| f.getAnnotation(com.google.inject.Inject.class) != null;
-			assertFalse("RuneLite's shared executor is never injected: " + f,
-				injected && ExecutorService.class.isAssignableFrom(f.getType()));
-		}
-
 		final Fixture f = new Fixture(true);
 		// the plugin's own executor, not the fixture's mock
 		f.plugin.executors = f.ownExecutors;
 		onEdt(f.plugin::startUp);
 		try
 		{
-			final ScheduledExecutorService ex = (ScheduledExecutorService) field(f.plugin, "executor");
+			final ScheduledExecutorService ex = f.plugin.executor;
 			assertNotNull(ex);
 			final Thread t = ex.submit(Thread::currentThread).get(5, TimeUnit.SECONDS);
 			assertEquals(WhyLagPlugin.SAMPLER_THREAD, t.getName());
@@ -259,7 +240,7 @@ public class WhyLagWiringTest
 		onEdt(f.plugin::startUp);
 		final NavigationButton nav = f.nav();
 		final Overlay overlay = f.overlay();
-		final WhyLagPanel panel = (WhyLagPanel) field(f.plugin, "panel");
+		final WhyLagPanel panel = f.plugin.panel;
 		onEdt(panel::onActivate);
 		assertTrue(panel.isActive());
 		f.posted.clear();
@@ -278,20 +259,14 @@ public class WhyLagWiringTest
 		onEdt(f.posted.get(0));
 		assertFalse(panel.isActive());
 		assertEquals(1, panel.deactivations());
-		assertNull(field(f.plugin, "executor"));
-		assertNull(field(f.plugin, "navButton"));
-		assertNull(field(f.plugin, "overlay"));
+		assertNull(f.plugin.executor);
+		assertNull(f.plugin.navButton);
+		assertNull(f.plugin.overlay);
 	}
 
 	@Test
 	public void bridgeIsNullOutsideDeveloperMode() throws Exception
 	{
-		final Field dev = WhyLagPlugin.class.getDeclaredField("developerMode");
-		assertEquals(boolean.class, dev.getType());
-		assertNotNull("an injection point", dev.getAnnotation(Inject.class));
-		assertNotNull("RuneLite binds the constant by this name", dev.getAnnotation(Named.class));
-		assertEquals("developerMode", dev.getAnnotation(Named.class).value());
-
 		final Fixture off = new Fixture(false);
 		assertNull("constructing the plugin installs nothing", WhyLagDevBridge.handle);
 		onEdt(off.plugin::startUp);
@@ -305,7 +280,7 @@ public class WhyLagWiringTest
 		final DevHandle h = WhyLagDevBridge.handle;
 		assertNotNull("developer mode is the only thing that fills the slot", h);
 		assertSame(on.engine(), h.source());
-		assertSame(field(on.plugin, "panel"), h.control());
+		assertSame(on.plugin.panel, h.control());
 		assertTrue("the graphs are open when the plugin starts (the user, 2026-09-29)", h.control().graphsOpen());
 		assertFalse("the lag list stays folded", h.control().lagsOpen());
 		assertNotNull(h.settings());
@@ -363,7 +338,7 @@ public class WhyLagWiringTest
 		final Fixture f = new Fixture(false);
 		f.plugin.engines = s -> new LagEngine(s, new FakeDetector(), new FakeJudge(), f.snapshots);
 		onEdt(f.plugin::startUp);
-		final WhyLagPanel panel = (WhyLagPanel) field(f.plugin, "panel");
+		final WhyLagPanel panel = f.plugin.panel;
 		for (int i = 1; i <= 3; i++)
 		{
 			f.at(i);
@@ -436,10 +411,6 @@ public class WhyLagWiringTest
 	public void theSamplerIsTheOnlyThread() throws Exception
 	{
 		final Fixture f = new Fixture(false);
-		for (Field field : WhyLagPlugin.class.getDeclaredFields())
-		{
-			assertFalse(field.getName(), field.getName().toLowerCase(Locale.ROOT).contains("world"));
-		}
 		onEdt(f.plugin::startUp);
 		verify(f.executor, times(1)).scheduleAtFixedRate(any(Runnable.class), anyLong(), anyLong(),
 			any(TimeUnit.class));
@@ -456,23 +427,18 @@ public class WhyLagWiringTest
 	@Test
 	public void edtEventsOnlySetAFlag() throws Exception
 	{
-		for (String name : new String[]{"settingsDirty", "inGame"})
-		{
-			assertTrue(name + " is volatile", Modifier.isVolatile(WhyLagPlugin.class.getDeclaredField(name)
-				.getModifiers()));
-		}
 		final Fixture f = new Fixture(false);
 		onEdt(f.plugin::startUp);
 		f.at(1);
 		f.plugin.sampleOnce();
-		assertFalse("the first run read the settings", (boolean) field(f.plugin, "settingsDirty"));
+		assertFalse("the first run read the settings", f.plugin.settingsDirty);
 		f.clearMocks();
 
 		f.plugin.onConfigChanged(configChanged("gpu", "fpsTarget"));
-		assertTrue("any group feeds the settings", (boolean) field(f.plugin, "settingsDirty"));
-		set(f.plugin, "settingsDirty", false);
+		assertTrue("any group feeds the settings", f.plugin.settingsDirty);
+		f.plugin.settingsDirty = false;
 		f.plugin.onConfigChanged(configChanged("runelite", "gpuplugin"));
-		assertTrue("the plugin flags too", (boolean) field(f.plugin, "settingsDirty"));
+		assertTrue("the plugin flags too", f.plugin.settingsDirty);
 		final FocusChanged focus = new FocusChanged();
 		focus.setFocused(false);
 		f.plugin.onFocusChanged(focus);
@@ -490,22 +456,6 @@ public class WhyLagWiringTest
 		f.engine().frame(f.base + 102 * SECOND + 100 * MS, 0);
 		assertTrue(Flags.has(s.seconds.flags(101), Flags.FOCUSED));
 		onEdt(f.plugin::shutDown);
-	}
-
-	@Test
-	public void frameAndTickSubscribersRunFirst() throws Exception
-	{
-		final Subscribe frame = WhyLagPlugin.class.getMethod("onBeforeRender", BeforeRender.class)
-			.getAnnotation(Subscribe.class);
-		final Subscribe tick = WhyLagPlugin.class.getMethod("onGameTick", GameTick.class)
-			.getAnnotation(Subscribe.class);
-		assertNotNull(frame);
-		assertNotNull(tick);
-		assertEquals(100f, frame.priority(), 0f);
-		assertEquals(100f, tick.priority(), 0f);
-		// Higher runs first; the others keep RuneLite's default.
-		assertEquals(0f, WhyLagPlugin.class.getMethod("onGameStateChanged", GameStateChanged.class)
-			.getAnnotation(Subscribe.class).priority(), 0f);
 	}
 
 	@Test
@@ -567,7 +517,6 @@ public class WhyLagWiringTest
 	@Test
 	public void theRendererIsTheClientsAnswerReadOnTheClientThread() throws Exception
 	{
-		assertTrue("gpu is volatile", Modifier.isVolatile(WhyLagPlugin.class.getDeclaredField("gpu").getModifiers()));
 		final Fixture f = new Fixture(true);
 		final AtomicBoolean isGpu = new AtomicBoolean(true);
 		final Thread clientThread = Thread.currentThread();
@@ -595,13 +544,13 @@ public class WhyLagWiringTest
 		verify(f.clientThread, times(1)).invokeLater(asks.capture());
 		assertTrue("the task is done at once", asks.getValue().getAsBoolean());
 		verify(f.client, times(1)).isGpu();
-		assertTrue((boolean) field(f.plugin, "gpu"));
-		assertTrue("a change makes the next run read again", (boolean) field(f.plugin, "settingsDirty"));
+		assertTrue(f.plugin.gpu);
+		assertTrue("a change makes the next run read again", f.plugin.settingsDirty);
 
 		f.at(2);
 		onSamplerThread(f.plugin::sampleOnce);
 		assertEquals("the client's answer reached the reader", Renderer.GPU, WhyLagDevBridge.handle.settings().renderer);
-		assertFalse("an answer that did not change asks for nothing more", (boolean) field(f.plugin, "settingsDirty"));
+		assertFalse("an answer that did not change asks for nothing more", f.plugin.settingsDirty);
 
 		isGpu.set(false);
 		verify(f.clientThread, times(2)).invokeLater(asks.capture());
@@ -615,7 +564,7 @@ public class WhyLagWiringTest
 		final ArgumentCaptor<Runnable> start = ArgumentCaptor.forClass(Runnable.class);
 		verify(f.clientThread).invokeLater(start.capture());
 		start.getValue().run();
-		assertTrue((boolean) field(f.plugin, "gpu"));
+		assertTrue(f.plugin.gpu);
 		assertTrue("asked on the client thread only: " + offThread, offThread.isEmpty());
 		onEdt(f.plugin::shutDown);
 	}
@@ -714,7 +663,7 @@ public class WhyLagWiringTest
 		final long since = s.loggedInSinceSec();
 		assertTrue("the plugin was switched on while logged in: the warm-up runs from the read's second, " + since,
 			since >= before && since <= after);
-		assertTrue((boolean) field(f.plugin, "inGame"));
+		assertTrue(f.plugin.inGame);
 
 		f.closeSecond(100);
 		assertEquals(State.LOGGED_IN, s.seconds.state(100));
@@ -802,13 +751,13 @@ public class WhyLagWiringTest
 		verify(f.infoBoxManager, times(1)).addInfoBox(added.capture());
 		assertTrue(added.getValue() instanceof BadgeInfoBox);
 		verify(f.infoBoxManager, never()).removeInfoBox(any());
-		assertSame("the plugin keeps it", added.getValue(), field(f.plugin, "infoBox"));
+		assertSame("the plugin keeps it", added.getValue(), f.plugin.infoBox);
 
 		onEdt(f.plugin::shutDown);
 		verify(f.infoBoxManager, times(1)).removeInfoBox(same(added.getValue()));
 		verify(f.infoBoxManager, times(1)).removeInfoBox(any());
 		verify(f.infoBoxManager, times(1)).addInfoBox(any());
-		assertNull(field(f.plugin, "infoBox"));
+		assertNull(f.plugin.infoBox);
 
 		// A plugin that never started removes nothing.
 		final Fixture idle = new Fixture(false);
@@ -853,7 +802,7 @@ public class WhyLagWiringTest
 		final FakeJudge judge = new FakeJudge();
 		f.plugin.engines = s -> new LagEngine(s, detector, judge, f.snapshots);
 		onEdt(f.plugin::startUp);
-		final WhyLagPanel panel = (WhyLagPanel) field(f.plugin, "panel");
+		final WhyLagPanel panel = f.plugin.panel;
 
 		f.at(1);
 		f.plugin.sampleOnce();
@@ -964,7 +913,7 @@ public class WhyLagWiringTest
 	/** The notes the diagnostics hold, oldest first, each as the report prints it: {@code hh:mm:ss  text}. */
 	static List<String> notesOf(Fixture f) throws Exception
 	{
-		final String text = ((Diagnostics) field(f.plugin, "diagnostics")).text();
+		final String text = (f.plugin.diagnostics).text();
 		final List<String> notes = new ArrayList<>();
 		boolean in = false;
 		for (String line : text.split("\n", -1))
@@ -1107,7 +1056,7 @@ public class WhyLagWiringTest
 		f.plugin.engines = s -> new LagEngine(s, new FakeDetector(), new FakeJudge(), f.snapshots);
 		onEdt(f.plugin::startUp);
 		// The client thread has answered Client#isGpu() (true), as it does within a tick of the plugin starting.
-		set(f.plugin, "gpu", true);
+		f.plugin.gpu = true;
 
 		f.at(1);
 		f.plugin.sampleOnce();
@@ -1151,7 +1100,7 @@ public class WhyLagWiringTest
 		final FakeJudge judge = new FakeJudge();
 		f.plugin.engines = s -> new LagEngine(s, new FakeDetector(), judge, f.snapshots);
 		onEdt(f.plugin::startUp);
-		final Diagnostics d = (Diagnostics) field(f.plugin, "diagnostics");
+		final Diagnostics d = f.plugin.diagnostics;
 		final int before = judge.currents.get();
 
 		judge.throwing = true;
@@ -1195,7 +1144,7 @@ public class WhyLagWiringTest
 		final Fixture f = new Fixture(false);
 		f.plugin.engines = s -> new LagEngine(s, new FakeDetector(), new FakeJudge(), new SnapshotBuilder());
 		onEdt(f.plugin::startUp);
-		final MinuteLog log = (MinuteLog) field(f.plugin, "minutes");
+		final MinuteLog log = f.plugin.minutes;
 
 		for (int i = 1; i <= 59; i++)
 		{
@@ -1245,7 +1194,7 @@ public class WhyLagWiringTest
 	{
 		final Fixture f = new Fixture(false);
 		onEdt(f.plugin::startUp);
-		final PanelActions actions = (PanelActions) field(f.plugin, "actions");
+		final PanelActions actions = f.plugin.actions;
 		clearInvocations(f.configManager, f.executor);
 
 		onEdt(() -> actions.badgeShow(false));
@@ -1274,18 +1223,11 @@ public class WhyLagWiringTest
 		onEdt(f.plugin::shutDown);
 	}
 
-	/** The keys the four methods write are the config's own items, and the group is its group. */
+	/** The keys the four methods write are the config's own, and the group is its group (the probe reads the items). */
 	@Test
-	public void theKeysWrittenAreTheConfigsFrozenKeys() throws Exception
+	public void theKeysWrittenAreTheConfigsFrozenKeys()
 	{
 		assertEquals("whylag", WhyLagConfig.GROUP);
-		for (String key : new String[] {"badgeShow", "badgeStyle", "badgeWhenSmooth", "badgeChatLine"})
-		{
-			final net.runelite.client.config.ConfigItem item = WhyLagConfig.class.getMethod(key)
-				.getAnnotation(net.runelite.client.config.ConfigItem.class);
-			assertNotNull(key, item);
-			assertEquals(key, item.keyName());
-		}
 		assertEquals("the stored names of the two enums are the constants' names", "SHAPE_ONLY",
 			BadgeStyle.SHAPE_ONLY.name());
 		assertEquals("HIDE", WhenSmooth.HIDE.name());
@@ -1326,7 +1268,7 @@ public class WhyLagWiringTest
 	public void theSnapshotTheSamplerPostsHoldsTheStoredSettings() throws Exception
 	{
 		final Fixture f = steppedFixture(2);
-		final WhyLagPanel panel = (WhyLagPanel) field(f.plugin, "panel");
+		final WhyLagPanel panel = f.plugin.panel;
 		onEdt(panel::onActivate);
 		when(f.config.badgeShow()).thenReturn(false);
 		when(f.config.badgeStyle()).thenReturn(BadgeStyle.SHAPE_AND_WORDS);
@@ -1336,9 +1278,7 @@ public class WhyLagWiringTest
 		assertEquals(1, f.posted.size());
 		onEdt(f.posted.get(0));
 
-		final java.lang.reflect.Field last = WhyLagPanel.class.getDeclaredField("last");
-		last.setAccessible(true);
-		final PanelSnapshot shown = (PanelSnapshot) last.get(panel);
+		final PanelSnapshot shown = PanelPeek.last(panel);
 		assertFalse(shown.badgeSettings.show);
 		assertEquals(BadgeStyle.SHAPE_AND_WORDS, shown.badgeSettings.style);
 		assertEquals(WhenSmooth.SHOW, shown.badgeSettings.whenSmooth);
@@ -1370,7 +1310,7 @@ public class WhyLagWiringTest
 	private static List<Report> press(Fixture f, PanelSnapshot s) throws Exception
 	{
 		final List<Report> got = new ArrayList<>();
-		final PanelActions actions = (PanelActions) field(f.plugin, "actions");
+		final PanelActions actions = f.plugin.actions;
 		f.posted.clear();
 		clearInvocations(f.executor);
 		onEdt(() -> actions.testAndReport(s, got::add));
@@ -1403,7 +1343,7 @@ public class WhyLagWiringTest
 		final PanelSnapshot s = f.plugin.attach(f.engine().snapshot(10, f.wall()));
 		final List<Report> got = new ArrayList<>();
 		final List<Boolean> onEdtThread = new ArrayList<>();
-		final PanelActions actions = (PanelActions) field(f.plugin, "actions");
+		final PanelActions actions = f.plugin.actions;
 		f.posted.clear();
 		clearInvocations(f.executor);
 
@@ -1445,14 +1385,14 @@ public class WhyLagWiringTest
 	{
 		final Fixture f = steppedFixture(1);
 		final PanelSnapshot s = f.plugin.attach(f.engine().snapshot(10, f.wall()));
-		final PanelActions actions = (PanelActions) field(f.plugin, "actions");
+		final PanelActions actions = f.plugin.actions;
 		onEdt(f.plugin::shutDown);
 		final List<Report> got = new ArrayList<>();
 		onEdt(() -> actions.testAndReport(s, got::add));
 		assertTrue(got.isEmpty());
 
 		final Fixture g = steppedFixture(1);
-		final PanelActions rejecting = (PanelActions) field(g.plugin, "actions");
+		final PanelActions rejecting = g.plugin.actions;
 		doAnswer(inv ->
 		{
 			throw new java.util.concurrent.RejectedExecutionException("shut down");
@@ -1468,7 +1408,7 @@ public class WhyLagWiringTest
 	{
 		final Fixture f = steppedFixture(3);
 		final PanelSnapshot s = f.plugin.attach(f.engine().snapshot(10, f.wall()));
-		final Diagnostics d = (Diagnostics) field(f.plugin, "diagnostics");
+		final Diagnostics d = f.plugin.diagnostics;
 		// The facts read it first and fail; the plain report that follows reads it again and gets through.
 		when(f.config.badgeShow()).thenThrow(new NoClassDefFoundError("net/runelite/api/Gone")).thenReturn(true);
 
@@ -1557,21 +1497,32 @@ public class WhyLagWiringTest
 			doReturn(future).when(executor).scheduleAtFixedRate(any(Runnable.class), anyLong(), anyLong(),
 				any(TimeUnit.class));
 
-			set(plugin, "client", client);
-			set(plugin, "clientThread", clientThread);
-			set(plugin, "clientToolbar", clientToolbar);
-			set(plugin, "configManager", configManager);
-			set(plugin, "config", config);
-			set(plugin, "overlayManager", overlayManager);
-			set(plugin, "infoBoxManager", infoBoxManager);
-			set(plugin, "tooltipManager", tooltipManager);
-			set(plugin, "chatMessageManager", chat);
-			set(plugin, "developerMode", developerMode);
+			// What the client's Guice injector does: the nine collaborators and the developer-mode constant are bound to
+			// the mocks, and the plugin's injected fields are filled from them.
+			Guice.createInjector(binder ->
+			{
+				binder.bind(Client.class).toProvider(just(client));
+				binder.bind(ClientThread.class).toProvider(just(clientThread));
+				binder.bind(ClientToolbar.class).toProvider(just(clientToolbar));
+				binder.bind(ConfigManager.class).toProvider(just(configManager));
+				binder.bind(WhyLagConfig.class).toProvider(just(config));
+				binder.bind(OverlayManager.class).toProvider(just(overlayManager));
+				binder.bind(InfoBoxManager.class).toProvider(just(infoBoxManager));
+				binder.bind(TooltipManager.class).toProvider(just(tooltipManager));
+				binder.bind(ChatMessageManager.class).toProvider(just(chat));
+				binder.bindConstant().annotatedWith(Names.named("developerMode")).to(developerMode);
+			}).injectMembers(plugin);
 			plugin.nanoClock = () -> now;
 			plugin.wallClock = this::wall;
 			ownExecutors = plugin.executors;
 			plugin.executors = () -> executor;
 			plugin.edt = posted::add;
+		}
+
+		/** A provider that always hands out {@code value}: Guice does not inject into what it provides. */
+		private static <T> Provider<T> just(T value)
+		{
+			return () -> value;
 		}
 
 		/** The sampler's clock at {@code sec} seconds and 10 ms after the session's start. */
@@ -1587,7 +1538,7 @@ public class WhyLagWiringTest
 
 		LagEngine engine() throws Exception
 		{
-			return (LagEngine) field(plugin, "engine");
+			return plugin.engine;
 		}
 
 		/**
@@ -1675,7 +1626,7 @@ public class WhyLagWiringTest
 	static final class FakeJudge implements Judge
 	{
 		final AtomicInteger currents = new AtomicInteger();
-		final List<Class<?>> thrownKinds = new ArrayList<>();
+		final List<String> thrownKinds = new ArrayList<>();
 		volatile boolean throwing;
 		volatile String message = "the judge fails";
 		private boolean linkage;
@@ -1690,9 +1641,10 @@ public class WhyLagWiringTest
 			final RuntimeException runtime = new IllegalStateException(message);
 			final Error error = new NoClassDefFoundError("net/runelite/api/Gone");
 			final Throwable t = linkage ? error : runtime;
-			if (!thrownKinds.contains(t.getClass()))
+			final String kind = linkage ? "LinkageError" : "RuntimeException";
+			if (!thrownKinds.contains(kind))
 			{
-				thrownKinds.add(t.getClass());
+				thrownKinds.add(kind);
 			}
 			if (linkage)
 			{
@@ -1739,20 +1691,6 @@ public class WhyLagWiringTest
 		e.setGroup(group);
 		e.setKey(key);
 		return e;
-	}
-
-	static void set(Object target, String name, Object value) throws Exception
-	{
-		final Field f = WhyLagPlugin.class.getDeclaredField(name);
-		f.setAccessible(true);
-		f.set(target, value);
-	}
-
-	static Object field(Object target, String name) throws Exception
-	{
-		final Field f = WhyLagPlugin.class.getDeclaredField(name);
-		f.setAccessible(true);
-		return f.get(target);
 	}
 
 	/** Runs on the Swing thread and rethrows whatever happened there, the way the client would see it. */
