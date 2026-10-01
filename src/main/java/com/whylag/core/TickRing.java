@@ -1,6 +1,5 @@
 package com.whylag.core;
 
-import java.lang.invoke.VarHandle;
 
 /**
  * Every tick, in arrival order, numbered by a sequence from 0 (contract 3.3). The client thread writes; any thread
@@ -28,6 +27,8 @@ public final class TickRing
 	private final byte[] flags;
 
 	private volatile long head = -1;
+	/** Written at the start of {@link #valid(long)} for its ordering only; never read. */
+	private volatile int order;
 
 	/**
 	 * @param capacity slots, at least 2; {@code capacity - 1} ticks are readable
@@ -51,9 +52,8 @@ public final class TickRing
 	public void put(TickRow v)
 	{
 		final long seq = head + 1;
-		// The slot about to be reused belongs to sequence seq - capacity, already below tail(); keep that
-		// published head ahead of the column stores below on every CPU.
-		VarHandle.storeStoreFence();
+		// The slot about to be reused belongs to sequence seq - capacity, already below tail(). The volatile read of
+		// head above keeps that published head ahead of the column stores below on every CPU.
 		final int i = slot(seq);
 		atMs[i] = v.atMs;
 		gapMs[i] = v.gapMs;
@@ -76,10 +76,10 @@ public final class TickRing
 		return Math.max(0, head - capacity + 2);
 	}
 
-	/** {@code tail() <= seq <= head()}. Starts with an acquire fence, as {@link SecondRing#valid(long)} does. */
+	/** {@code tail() <= seq <= head()}. Starts with a volatile store, as {@link SecondRing#valid(long)} does. */
 	public boolean valid(long seq)
 	{
-		VarHandle.acquireFence();
+		order = 0;
 		final long h = head;
 		return seq >= Math.max(0, h - capacity + 2) && seq <= h;
 	}

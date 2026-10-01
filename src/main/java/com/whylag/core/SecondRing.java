@@ -1,6 +1,5 @@
 package com.whylag.core;
 
-import java.lang.invoke.VarHandle;
 
 /**
  * One row per session second, in two column groups with one writer each (contract 3.3): the FRAME columns are
@@ -28,9 +27,12 @@ import java.lang.invoke.VarHandle;
  * readable seconds, which is why {@link Session} builds it one slot larger than {@link Thresholds#SECONDS}.
  *
  * <p><b>Reading.</b> Call {@link #valid(long)} before reading a second (it is published) and again after (it was
- * not overwritten meanwhile); throw the read away if the second check fails. {@code valid} starts with an acquire
- * fence, and each put starts with a store-store fence, so the re-check is sound on weakly ordered CPUs (ARM) as
- * well as on x86, without a lock.
+ * not overwritten meanwhile); throw the read away if the second check fails. The ordering that makes the re-check
+ * sound on weakly ordered CPUs (ARM) as well as on x86 comes from volatile accesses alone, no lock and no fence
+ * API: each put begins by reading its volatile head, so the column stores that follow cannot move before the head
+ * store of the previous put; {@code valid} begins with a volatile store to {@link #order}, so the column reads a
+ * caller made before it cannot move past the volatile head reads that follow (a plain read may otherwise be
+ * reordered after a later volatile read).
  */
 public final class SecondRing
 {
@@ -60,6 +62,8 @@ public final class SecondRing
 
 	private volatile long frameHead = -1;
 	private volatile long hostHead = -1;
+	/** Written at the start of {@link #valid(long)} for its ordering only; never read. */
+	private volatile int order;
 
 	/**
 	 * @param capacity slots, at least 2; {@code capacity - 1} seconds are readable
@@ -108,8 +112,8 @@ public final class SecondRing
 			throw new IllegalArgumentException("putFrame(" + sec + ") must follow frame head " + head);
 		}
 		// The slot about to be reused belongs to second sec - capacity, which the head already published puts
-		// below tail(). The fence keeps that published head ahead of the column stores below on every CPU.
-		VarHandle.storeStoreFence();
+		// below tail(). The volatile read of frameHead above keeps that published head ahead of the column stores
+		// below on every CPU (a volatile read is never reordered with the stores after it).
 		final int i = slot(sec);
 		frames[i] = toShort(v.frames);
 		worstFrameMs[i] = toShort(v.worstFrameMs);
@@ -138,7 +142,7 @@ public final class SecondRing
 		{
 			throw new IllegalArgumentException("putHost(" + sec + ") must follow host head " + head);
 		}
-		VarHandle.storeStoreFence();
+		// Ordered after the previous head store by the volatile read of hostHead above, as in putFrame.
 		final int i = slot(sec);
 		rttMs[i] = toShort(v.rttMs);
 		rttAgeS[i] = toShort(v.rttAgeS);
@@ -172,10 +176,10 @@ public final class SecondRing
 		return tailOf(frameHead, hostHead);
 	}
 
-	/** {@code tail() <= sec <= head()}. Starts with an acquire fence: see the class notes on reading. */
+	/** {@code tail() <= sec <= head()}. Starts with a volatile store: see the class notes on reading. */
 	public boolean valid(long sec)
 	{
-		VarHandle.acquireFence();
+		order = 0;
 		final long f = frameHead;
 		final long h = hostHead;
 		return sec >= tailOf(f, h) && sec <= Math.min(f, h);
